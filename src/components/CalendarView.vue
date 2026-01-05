@@ -54,8 +54,17 @@ const goToday = () => {
   currentMonth.value = dayjs();
 };
 
-const toggleComplete = (todo) => {
-  emit('update-todo', { ...todo, isCompleted: !todo.isCompleted });
+const toggleComplete = (todo, event) => {
+  const newStatus = !todo.isCompleted;
+  
+  // 1. Immediate UI update for popover if visible
+  if (hoverState.value.todo && hoverState.value.todo.id === todo.id) {
+    hoverState.value.todo.isCompleted = newStatus;
+  }
+  
+  // Confetti is now handled globally in App.vue
+
+  emit('update-todo', { ...todo, isCompleted: newStatus });
 };
 
 const showPopover = (todo, e) => {
@@ -97,6 +106,13 @@ const startHide = () => {
 const cancelHide = () => {
   if (hideTimer) clearTimeout(hideTimer);
 };
+
+const handleWheel = (e) => {
+  const container = e.currentTarget;
+  // Reduce scroll speed to avoid skipping items
+  // Using a factor of 0.35 (approx 35px per notch, roughly 2 items)
+  container.scrollTop += e.deltaY * 0.35;
+};
 </script>
 
 <template>
@@ -123,7 +139,7 @@ const cancelHide = () => {
           }"
         >
           <div class="date-num">{{ day.date() }}</div>
-          <div class="day-todos">
+          <div class="day-todos" @wheel.stop.prevent="handleWheel">
             <div 
               v-for="todo in getTodosForDate(day)" 
               :key="todo.id" 
@@ -148,10 +164,10 @@ const cancelHide = () => {
       @mouseenter="cancelHide"
       @mouseleave="startHide"
     >
-      <div class="row" @click.stop="toggleComplete(hoverState.todo)">
+      <div class="row" @click.stop="toggleComplete(hoverState.todo, $event)">
         <span class="priority-dot" :class="hoverState.todo.priority || 'normal'"></span>
-        <span class="title">{{ hoverState.todo.content }}</span>
-        <i :class="hoverState.todo.isCompleted ? 'ri-checkbox-circle-line' : 'ri-checkbox-blank-circle-line'"></i>
+        <span class="title" :class="{ completed: hoverState.todo.isCompleted }">{{ hoverState.todo.content }}</span>
+        <i :class="hoverState.todo.isCompleted ? 'ri-checkbox-circle-line completed-icon' : 'ri-checkbox-blank-circle-line'"></i>
       </div>
     </div>
   </div>
@@ -197,12 +213,14 @@ const cancelHide = () => {
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border-color);
+    overflow: hidden;
 
     .weekdays {
       display: grid;
       grid-template-columns: repeat(7, 1fr);
       background: var(--bg-color);
       border-bottom: 1px solid var(--border-color);
+      flex-shrink: 0;
       
       .weekday {
         padding: 10px;
@@ -215,8 +233,10 @@ const cancelHide = () => {
     .days {
       flex: 1;
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      grid-auto-rows: 1fr;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-auto-rows: minmax(96px, 1fr);
+      overflow: hidden;
+      min-height: 0;
       
       .day-cell {
         border-right: 1px solid var(--border-color);
@@ -224,6 +244,9 @@ const cancelHide = () => {
         padding: 5px;
         position: relative;
         background: var(--secondary-bg);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
 
         &:nth-child(7n) {
           border-right: none;
@@ -251,24 +274,32 @@ const cancelHide = () => {
           font-size: 14px;
           margin-bottom: 4px;
           font-variant-numeric: tabular-nums;
+          flex-shrink: 0;
         }
 
         .day-todos {
           display: flex;
           flex-direction: column;
-          gap: 4px;
-          max-height: calc(100% - 24px);
+          gap: 2px;
+          flex: 1;
+          min-height: 0;
           overflow-y: auto;
-          
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          &::-webkit-scrollbar {
+            width: 0;
+            height: 0;
+          }
+
           .todo-thumb {
             position: relative;
             display: flex;
             align-items: center;
-            padding: 3px 6px;
+            padding: 1px 4px;
             border-radius: 4px;
             cursor: pointer;
             color: #fff;
-            font-size: 12px;
+            font-size: 11px;
             line-height: 1.4;
             max-width: 100%;
             transition: all 0.2s ease;
@@ -287,7 +318,6 @@ const cancelHide = () => {
             }
             
             &:hover {
-              transform: translateY(-1px) scale(1.02);
               z-index: 2;
               box-shadow: 0 2px 4px rgba(0,0,0,0.15);
             }
@@ -344,14 +374,18 @@ const cancelHide = () => {
   .title {
     flex: 1;
     font-size: 12px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    word-break: break-all;
+    line-height: 1.4;
     
     &.completed {
       text-decoration: line-through;
       color: var(--secondary-text);
     }
+  }
+
+  .completed-icon {
+    color: var(--secondary-text);
   }
 }
 </style>

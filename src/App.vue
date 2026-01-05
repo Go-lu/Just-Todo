@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import Sidebar from './components/Sidebar.vue';
 import TodoList from './components/TodoList.vue';
 import CalendarView from './components/CalendarView.vue';
@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import 'dayjs/locale/zh-cn';
+import confetti from 'canvas-confetti';
 
 dayjs.extend(isSameOrBefore);
 dayjs.locale('zh-cn');
@@ -37,6 +38,38 @@ const taskDrawer = ref({
   initialData: {}
 });
 
+const themeMode = ref('system');
+const applyTheme = (mode) => {
+  const root = document.documentElement;
+  root.classList.remove('theme-light', 'theme-dark');
+  if (mode === 'light') {
+    root.classList.add('theme-light');
+  } else if (mode === 'dark') {
+    root.classList.add('theme-dark');
+  } else {
+    
+  }
+};
+const setThemeMode = (mode) => {
+  themeMode.value = mode;
+};
+const mediaQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+const handleSystemThemeChange = () => {
+  if (themeMode.value === 'system') applyTheme('system');
+};
+watch(themeMode, (val) => {
+  localStorage.setItem('theme-mode', val);
+  applyTheme(val);
+});
+onMounted(() => {
+  const saved = localStorage.getItem('theme-mode') || 'system';
+  themeMode.value = saved;
+  applyTheme(saved);
+  mediaQuery && mediaQuery.addEventListener('change', handleSystemThemeChange);
+});
+onUnmounted(() => {
+  mediaQuery && mediaQuery.removeEventListener('change', handleSystemThemeChange);
+});
 const minDate = ref(dayjs().format('YYYY-MM-DD'));
 
 const sortState = ref({
@@ -348,6 +381,15 @@ const updateTodo = (updatedTodo) => {
       updatedTodo.completedAt = Date.now();
       if (!updatedTodo.history) updatedTodo.history = [];
       updatedTodo.history.push({ type: 'complete', timestamp: Date.now() });
+      
+      // Trigger Global Confetti
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'],
+        zIndex: 99999
+      });
     } else if (!updatedTodo.isCompleted && oldTodo.isCompleted) {
       updatedTodo.completedAt = null;
       if (!updatedTodo.history) updatedTodo.history = [];
@@ -726,10 +768,12 @@ const exportMarkdown = () => {
       :categories="categories" 
       :currentCategoryId="currentCategoryId"
       :todos="todos"
+      :themeMode="themeMode"
       @select="selectCategory"
       @update:categories="updateCategories"
       @add-category="addCategory"
       @context-menu="showContextMenu"
+      @theme-change="setThemeMode"
     />
     
     <main class="main-content">

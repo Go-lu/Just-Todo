@@ -73,20 +73,23 @@ textarea:focus, input:focus {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
-/* Scrollbar styling */
+/* Scrollbar styling - Hidden globally */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 0;
+  height: 0;
+  display: none;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
+  background: transparent;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+
+/* Ensure cross-browser hiding */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
 }
 
 @media (prefers-color-scheme: light) {
@@ -119,9 +122,36 @@ textarea:focus, input:focus {
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #475569;
+    background-color: #475569;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #64748b;
+    background-color: #64748b;
   }
+}
+
+/* Manual theme overrides */
+:root.theme-light {
+  --bg-color: #f8fafc;
+  --bg-secondary: #ffffff;
+  --text-color: #0f172a;
+  --secondary-text: #64748b;
+  --border-color: #e2e8f0;
+  --hover-bg: #f1f5f9;
+  --active-bg: #e2e8f0;
+  --input-bg: #ffffff;
+  --input-border: #cbd5e1;
+  --shadow-color: rgba(0,0,0,0.06);
+}
+
+:root.theme-dark {
+  --bg-color: #0f172a;
+  --bg-secondary: #1e293b;
+  --text-color: #f8fafc;
+  --secondary-text: #94a3b8;
+  --border-color: #334155;
+  --hover-bg: #334155;
+  --active-bg: #475569;
+  --input-bg: #1e293b;
+  --input-border: #475569;
+  --shadow-color: rgba(0,0,0,0.3);
 }

@@ -216,8 +216,10 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown);
 });
 
-const toggleComplete = (todo) => {
-  emit('update-todo', { ...todo, isCompleted: !todo.isCompleted });
+const toggleComplete = (todo, event) => {
+  const newStatus = !todo.isCompleted;
+  emit('update-todo', { ...todo, isCompleted: newStatus });
+  // Confetti is now handled globally in App.vue
 };
 
 const onContextMenu = (e, todo) => {
@@ -231,7 +233,8 @@ const onContextMenu = (e, todo) => {
     <!-- Header removed as per request -->
 
     <div class="groups-container">
-      <div v-for="group in displayGroups" :key="group.id" class="group-section">
+      <div class="timeline-content">
+        <div v-for="group in displayGroups" :key="group.id" class="group-section">
         <!-- Group Header -->
         <div 
           v-if="!group.noHeader" 
@@ -282,15 +285,15 @@ const onContextMenu = (e, todo) => {
                   @contextmenu="onContextMenu($event, element)"
                 >
                   <span class="drag-handle">⋮⋮</span>
-                  <label class="checkbox-wrapper" @click.stop>
-                    <input 
-                      type="checkbox" 
-                      :checked="element.isCompleted" 
-                      @change="toggleComplete(element)"
-                      class="checkbox"
-                    />
-                    <div class="checkbox-custom"></div>
-                  </label>
+                  <div class="checkbox-wrapper" @click.stop="toggleComplete(element, $event)">
+                    <div 
+                      class="custom-checkbox"
+                      :class="{ 'checked': element.isCompleted }"
+                      :style="{ borderColor: element.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }"
+                    >
+                      <i v-if="element.isCompleted" class="ri-check-line" style="color: white; font-size: 14px;"></i>
+                    </div>
+                  </div>
                   <div class="todo-content" @click="emit('item-click', element)">
                     <div class="content-main">
                       <span class="text">{{ element.content }}</span>
@@ -324,15 +327,15 @@ const onContextMenu = (e, todo) => {
                @contextmenu="onContextMenu($event, element)"
              >
                <span class="drag-handle" v-if="!isCustomSort && group.id === 'active' && !['all', 'today', 'plan', 'urgent', 'completed'].includes(categoryId)">⋮⋮</span>
-               <label class="checkbox-wrapper" @click.stop>
-                 <input 
-                   type="checkbox" 
-                   :checked="element.isCompleted" 
-                   @change="toggleComplete(element)"
-                   class="checkbox"
-                 />
-                 <div class="checkbox-custom"></div>
-               </label>
+               <div class="checkbox-wrapper" @click.stop="toggleComplete(element, $event)">
+                    <div 
+                      class="custom-checkbox"
+                      :class="{ 'checked': element.isCompleted }"
+                      :style="{ borderColor: element.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }"
+                    >
+                      <i v-if="element.isCompleted" class="ri-check-line" style="color: white; font-size: 14px;"></i>
+                    </div>
+                  </div>
                <div class="todo-content" @click="emit('item-click', element)">
                  <div class="content-main">
                    <span class="text">{{ element.content }}</span>
@@ -344,7 +347,7 @@ const onContextMenu = (e, todo) => {
                     <span v-if="element.description" class="meta-tag has-desc" title="有备注">
                       <i class="ri-sticky-note-line"></i>
                     </span>
-                    <span v-if="element.dueDate && !element.isCompleted" class="meta-tag" :class="{ overdue: dayjs(element.dueDate).isBefore(dayjs(), 'day') }">
+                    <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: dayjs(element.dueDate).isBefore(dayjs(), 'day') && !element.isCompleted }">
                       <i class="ri-calendar-line"></i> {{ dayjs(element.dueDate).format('MM-DD') }}
                     </span>
                     <span v-if="element.repeatRule && !element.isCompleted" class="meta-tag">
@@ -363,6 +366,7 @@ const onContextMenu = (e, todo) => {
       <div v-if="displayGroups.length === 0" class="empty-state">
         <img src="https://cdn.jsdelivr.net/npm/remixicon@2.5.0/icons/System/checkbox-circle-line.svg" style="width: 48px; opacity: 0.2; margin-bottom: 10px;">
         <div>暂无待办事项</div>
+      </div>
       </div>
     </div>
 
@@ -394,38 +398,91 @@ const onContextMenu = (e, todo) => {
   .groups-container {
     flex: 1;
     overflow-y: auto;
-    padding-bottom: 90px;
+    position: relative;
+    /* Padding moved to inner wrapper to allow axis to scroll with content */
+  }
+
+  .timeline-content {
+    position: relative;
+    padding: 20px 20px 90px 20px;
+    min-height: 100%;
+    
+    /* Timeline Axis Line */
+    &::before {
+      content: '';
+      position: absolute;
+      top: 30px;
+      bottom: 30px;
+      left: 28px; /* Closer to edge */
+      width: 2px;
+      border-left: 2px dashed var(--border-color); /* Dashed line */
+      background: none;
+      opacity: 0.6;
+      z-index: 0;
+    }
   }
 }
 
 .group-section {
-  margin-bottom: 20px;
+  margin-bottom: 30px;
+  position: relative;
+  z-index: 1;
 }
 
 .group-header {
   display: flex;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   padding: 6px 0;
   user-select: none;
+  position: relative;
+  padding-left: 24px; /* Space for dot */
   
+  /* Timeline Dot */
+  &::before {
+    content: '';
+    position: absolute;
+    /* 
+       Container padding-left is 20px. 
+       Line is at left: 28px (absolute to container).
+       Relative to container content (starts at 20px), line is at 8px.
+    */
+    left: 4px; 
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    box-shadow: 0 0 0 4px var(--bg-color); /* Spacing from line */
+    border: none;
+    z-index: 2;
+    transition: all 0.2s;
+  }
+
   &.clickable {
     cursor: pointer;
     &:hover {
       opacity: 0.8;
+      &::before {
+        transform: translateY(-50%) scale(1.2);
+        box-shadow: 0 0 0 6px var(--hover-bg);
+      }
     }
   }
 
   .header-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
   }
 
   .arrow-icon {
-    font-size: 20px;
-    color: var(--secondary-text);
+    font-size: 18px;
+    color: var(--primary-color); /* Blue color like reference */
     transition: transform 0.2s;
+    margin-left: 0;
+    opacity: 0.8;
     
     &.rotated {
       transform: rotate(90deg);
@@ -433,43 +490,44 @@ const onContextMenu = (e, todo) => {
   }
 
   .group-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-color);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--primary-color); /* Blue color like reference */
   }
 
   .group-count {
-    font-size: 12px;
-    color: var(--secondary-text);
-    background: var(--bg-secondary);
-    padding: 2px 8px;
-    border-radius: 10px;
+    display: none; /* Hide count to match cleaner look, or style it minimally */
   }
+}
+
+.group-list {
+  padding-left: 24px; /* Indent items to align with title text */
 }
 
 .todo-item {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
+  padding: 14px 18px;
   background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-  margin-bottom: 10px;
+  border-radius: 8px; /* Slightly less rounded, more like card */
+  margin-bottom: 12px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid transparent;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   user-select: none;
   position: relative;
   overflow: hidden;
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
-    border-color: var(--primary-color);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    background: var(--hover-bg); /* Highlight on hover */
     
     .drag-handle {
       opacity: 1;
     }
   }
+
 
   &.completed {
     opacity: 0.7;
@@ -510,52 +568,39 @@ const onContextMenu = (e, todo) => {
 
 /* Custom Checkbox */
 .checkbox-wrapper {
-  position: relative;
-  width: 20px;
-  height: 20px;
-  margin-right: 16px;
+  width: 24px;
+  height: 24px;
+  margin-right: 12px;
   flex-shrink: 0;
   cursor: pointer;
-}
-
-.checkbox {
-  opacity: 0;
-  width: 0;
-  height: 0;
-  position: absolute;
-}
-
-.checkbox-custom {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--primary-color);
-  border-radius: 6px;
-  background: transparent;
-  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-
-  &::after {
-    content: '';
-    width: 10px;
-    height: 5px;
-    border-left: 2px solid white;
-    border-bottom: 2px solid white;
-    transform: rotate(-45deg) translate(1px, -1px);
-    opacity: 0;
-    transition: opacity 0.2s;
-  }
 }
 
-.checkbox:checked + .checkbox-custom {
-  background: var(--primary-color);
-  
-  &::after {
-    opacity: 1;
+.custom-checkbox {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 6px; /* Soft rounded square */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background: transparent;
+
+  &:hover {
+    border-color: var(--primary-color) !important;
+    background: rgba(59, 130, 246, 0.05);
+  }
+
+  &.checked {
+    background: var(--secondary-text); /* Completed color */
+    border-color: transparent !important;
+    
+    /* If priority colors needed for checked state, can adjust here. 
+       But usually completed = gray/muted. 
+    */
   }
 }
 
@@ -619,24 +664,35 @@ const onContextMenu = (e, todo) => {
       align-items: center;
       gap: 4px;
       padding: 2px 8px;
-      background: var(--hover-bg);
-      border-radius: 12px;
+      background: var(--bg-color); /* Darker/Lighter than card */
+      border: 1px solid var(--border-color); /* Subtle border */
+      border-radius: 6px; /* Match checkbox radius */
       font-size: 11px;
       color: var(--secondary-text);
       transition: all 0.2s;
+      font-weight: 500;
 
       i {
         font-size: 12px;
+        opacity: 0.8;
       }
       
       &.overdue {
         background: rgba(239, 68, 68, 0.1);
         color: var(--danger-color);
+        border-color: rgba(239, 68, 68, 0.2);
       }
       
       &.has-desc {
         color: var(--primary-color);
         background: rgba(59, 130, 246, 0.1);
+        border-color: rgba(59, 130, 246, 0.2);
+      }
+
+      &.completed-time {
+         border-color: transparent;
+         background: transparent;
+         padding-left: 0;
       }
     }
   }

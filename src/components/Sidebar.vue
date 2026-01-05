@@ -15,10 +15,14 @@ const props = defineProps({
   todos: {
     type: Array,
     default: () => []
+  },
+  themeMode: {
+    type: String,
+    default: 'system'
   }
 });
 
-const emit = defineEmits(['select', 'update:categories', 'add-category', 'context-menu']);
+const emit = defineEmits(['select', 'update:categories', 'add-category', 'context-menu', 'theme-change', 'open-settings']);
 
 const dragging = ref(false);
 
@@ -61,6 +65,11 @@ const getSmartCount = (type) => {
 const handleDragEnd = () => {
   dragging.value = false;
 };
+
+const themeIndex = computed(() => props.themeMode === 'light' ? 0 : props.themeMode === 'dark' ? 1 : 2);
+const sliderLeft = computed(() => `${themeIndex.value * 33.333}%`);
+const setTheme = (mode) => emit('theme-change', mode);
+const openSettings = () => emit('open-settings');
 
 // Keyboard Navigation
 const handleKeyNav = (e) => {
@@ -186,7 +195,25 @@ onUnmounted(() => {
       </draggable>
     </div>
 
-    <div class="sidebar-footer"></div>
+    <div class="sidebar-footer">
+      <button class="settings-btn" title="设置" @click="openSettings">
+        <i class="ri-settings-3-line"></i>
+      </button>
+      <div class="theme-switch">
+        <div class="switch-track">
+          <div class="switch-slider" :style="{ left: sliderLeft }"></div>
+          <div class="switch-item" :class="{ active: props.themeMode === 'light' }" @click="setTheme('light')">
+            <i class="ri-sun-line"></i><span>白天</span>
+          </div>
+          <div class="switch-item" :class="{ active: props.themeMode === 'dark' }" @click="setTheme('dark')">
+            <i class="ri-moon-line"></i><span>黑夜</span>
+          </div>
+          <div class="switch-item" :class="{ active: props.themeMode === 'system' }" @click="setTheme('system')">
+            <i class="ri-computer-line"></i><span>系统</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -399,6 +426,76 @@ onUnmounted(() => {
   .sidebar-footer {
     padding: 10px;
     border-top: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .settings-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    color: var(--secondary-text);
+    transition: all 0.2s;
+    border: 1px solid transparent;
+    background: var(--bg-secondary);
+    
+    &:hover {
+      background-color: var(--hover-bg);
+      color: var(--primary-color);
+    }
+  }
+
+  .theme-switch {
+    flex: 1;
+  }
+
+  .switch-track {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .switch-item {
+    position: relative;
+    text-align: center;
+    padding: 6px 0;
+    font-size: 12px;
+    color: var(--secondary-text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    z-index: 1;
+    
+    &:hover {
+      color: var(--text-color);
+      background: var(--hover-bg);
+    }
+    
+    &.active {
+      color: var(--text-color);
+      font-weight: 600;
+    }
+  }
+
+  .switch-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 33.333%;
+    height: 100%;
+    background: var(--active-bg);
+    transition: left 0.25s ease;
+    z-index: 0;
   }
 }
 </style>
