@@ -485,7 +485,8 @@ const showContextMenu = ({ event, type, item }) => {
     x,
     y,
     type,
-    item
+    item,
+    submenuDirection: 'right'
   };
 
   nextTick(() => {
@@ -506,6 +507,11 @@ const showContextMenu = ({ event, type, item }) => {
       // Check right overflow
       if (x + rect.width > winWidth) {
         newX = winWidth - rect.width - 10;
+      }
+
+      // Check submenu overflow (approximate submenu width 160px)
+      if (newX + rect.width + 160 > winWidth) {
+        contextMenu.value.submenuDirection = 'left';
       }
 
       contextMenu.value.y = newY;
@@ -861,6 +867,7 @@ const exportMarkdown = () => {
     <div 
       v-if="contextMenu.visible" 
       class="context-menu"
+      :class="{ 'submenu-left': contextMenu.submenuDirection === 'left' }"
       :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
       @click.stop
     >
@@ -1269,6 +1276,19 @@ const exportMarkdown = () => {
         cursor: not-allowed;
         &:hover {
           background-color: transparent;
+        }
+      }
+    }
+  }
+
+  &.submenu-left {
+    .menu-item {
+      &:hover {
+        > .submenu {
+          left: auto;
+          right: 100%;
+          margin-left: 0;
+          margin-right: 8px;
         }
       }
     }

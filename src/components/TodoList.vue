@@ -39,9 +39,31 @@ const todosList = computed({
 
 // For collapsed states
 const collapsedGroups = ref({});
+const timelineRef = ref(null);
+const axisStyle = ref({ top: '0px', height: '0px' });
+const updateAxisBounds = () => {
+  nextTick(() => {
+    const el = timelineRef.value;
+    if (!el) return;
+    const containerRect = el.getBoundingClientRect();
+    const visibleHeaders = Array.from(el.querySelectorAll('.group-section .group-header')).filter(h => h.offsetParent);
+    const visibleItems = Array.from(el.querySelectorAll('.group-list .todo-item')).filter(i => i.offsetParent);
+    if (visibleHeaders.length === 0 || visibleItems.length === 0) {
+      axisStyle.value = { top: '0px', height: '0px' };
+      return;
+    }
+    const firstHeaderRect = visibleHeaders[0].getBoundingClientRect();
+    const lastItemRect = visibleItems[visibleItems.length - 1].getBoundingClientRect();
+    const top = firstHeaderRect.top - containerRect.top + firstHeaderRect.height / 2;
+    const bottom = lastItemRect.bottom - containerRect.top;
+    const height = Math.max(0, bottom - top);
+    axisStyle.value = { top: `${top}px`, height: `${height}px` };
+  });
+};
 
 const toggleGroup = (groupId) => {
   collapsedGroups.value[groupId] = !collapsedGroups.value[groupId];
+  updateAxisBounds();
 };
 
 const formatRepeatRule = (todo) => {
@@ -90,6 +112,7 @@ const displayGroups = computed(() => {
           title: p.name,
           color: p.color,
           items: items, // Sort is already applied by App.vue or default
+          isCollapsible: true,
           count: items.length
         });
       }
@@ -166,9 +189,10 @@ const displayGroups = computed(() => {
       if (active.length > 0 || completed.length === 0) {
         groups.push({
           id: 'active',
-          title: '', // No header for active list in custom view
+          title: '待办',
           items: active,
-          noHeader: true
+          isCollapsible: true,
+          count: active.length
         });
       }
       
@@ -189,6 +213,35 @@ const displayGroups = computed(() => {
 });
 
 const isCustomSort = computed(() => props.sortState.field !== 'default');
+watch(displayGroups, () => updateAxisBounds());
+watch(() => props.todos.length, () => updateAxisBounds());
+
+// Logic for Priority View default collapsed state
+const urgentInitialized = ref(false);
+
+const checkAndInitUrgent = () => {
+  if (props.categoryId === 'urgent' && !urgentInitialized.value && displayGroups.value.length > 0) {
+    const groups = displayGroups.value;
+    const firstId = groups[0].id;
+    groups.forEach(g => {
+      // Default expand highest priority (first one), collapse others
+      collapsedGroups.value[g.id] = (g.id !== firstId);
+    });
+    urgentInitialized.value = true;
+    updateAxisBounds();
+  }
+};
+
+watch(() => props.categoryId, (newId) => {
+  if (newId === 'urgent') {
+    urgentInitialized.value = false;
+    nextTick(() => checkAndInitUrgent());
+  }
+});
+
+watch(displayGroups, () => {
+  checkAndInitUrgent();
+});
 
 // ... existing methods ...
 const activateInput = () => {
@@ -206,14 +259,16 @@ const onKeydown = (e) => {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown);
-  // Initialize collapsed states
   if (props.categoryId !== 'all' && props.categoryId !== 'today' && props.categoryId !== 'plan' && props.categoryId !== 'urgent' && props.categoryId !== 'completed') {
-     collapsedGroups.value['completed'] = true; // Default collapse completed for custom lists
+     collapsedGroups.value['completed'] = true;
   }
+  updateAxisBounds();
+  window.addEventListener('resize', updateAxisBounds);
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('resize', updateAxisBounds);
 });
 
 const toggleComplete = (todo, event) => {
@@ -233,7 +288,8 @@ const onContextMenu = (e, todo) => {
     <!-- Header removed as per request -->
 
     <div class="groups-container">
-      <div class="timeline-content">
+      <div class="timeline-content" ref="timelineRef">
+        <div class="timeline-axis" :style="axisStyle"></div>
         <div v-for="group in displayGroups" :key="group.id" class="group-section">
         <!-- Group Header -->
         <div 
@@ -262,6 +318,7 @@ const onContextMenu = (e, todo) => {
              item-key="id" 
              class="todo-list-draggable"
              handle=".drag-handle"
+             animation="300"
              @end="(e) => emit('update:todos', props.todos)" 
            >
               <!-- Note: Draggable directly mutating prop array might be tricky if we split it. 
@@ -319,6 +376,7 @@ const onContextMenu = (e, todo) => {
 
            <!-- Non-draggable List -->
            <div v-else>
+             <TransitionGroup name="list" tag="div">
              <div 
                v-for="element in group.items" 
                :key="element.id" 
@@ -359,6 +417,7 @@ const onContextMenu = (e, todo) => {
                  </div>
                </div>
              </div>
+             </TransitionGroup>
            </div>
         </div>
       </div>
@@ -406,20 +465,14 @@ const onContextMenu = (e, todo) => {
     position: relative;
     padding: 20px 20px 90px 20px;
     min-height: 100%;
-    
-    /* Timeline Axis Line */
-    &::before {
-      content: '';
-      position: absolute;
-      top: 30px;
-      bottom: 30px;
-      left: 28px; /* Closer to edge */
-      width: 2px;
-      border-left: 2px dashed var(--border-color); /* Dashed line */
-      background: none;
-      opacity: 0.6;
-      z-index: 0;
-    }
+  }
+  .timeline-axis {
+    position: absolute;
+    left: 28px;
+    width: 2px;
+    border-left: 2px dashed var(--border-color);
+    opacity: 0.6;
+    z-index: 0;
   }
 }
 
@@ -582,7 +635,7 @@ const onContextMenu = (e, todo) => {
   width: 18px;
   height: 18px;
   border: 1.5px solid var(--border-color);
-  border-radius: 6px; /* Soft rounded square */
+  border-radius: 50%; /* Circular */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -746,5 +799,28 @@ const onContextMenu = (e, todo) => {
     opacity: 0.5;
     margin-bottom: 16px;
   }
+}
+
+/* List Transitions */
+.list-move,
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+  max-height: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+}
+
+.list-leave-active {
+  /* Ensure smooth removal */
+  max-height: 100px; /* Needs to be larger than actual height */
 }
 </style>

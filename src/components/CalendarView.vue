@@ -140,9 +140,10 @@ const handleWheel = (e) => {
         >
           <div class="date-num">{{ day.date() }}</div>
           <div class="day-todos" @wheel.stop.prevent="handleWheel">
+            <TransitionGroup name="calendar-item">
             <div 
               v-for="todo in getTodosForDate(day)" 
-              :key="todo.id" 
+              :key="todo.id + '-' + todo.isCompleted" 
               class="todo-thumb"
               :class="[{ completed: todo.isCompleted }, todo.priority || 'normal']"
               @click="emit('item-click', todo)"
@@ -152,6 +153,7 @@ const handleWheel = (e) => {
             >
               <span class="thumb-text">{{ todo.content }}</span>
             </div>
+            </TransitionGroup>
           </div>
         </div>
       </div>
@@ -387,5 +389,28 @@ const handleWheel = (e) => {
   .completed-icon {
     color: var(--secondary-text);
   }
+}
+
+/* Calendar Item Transitions */
+.calendar-item-enter-active,
+.calendar-item-leave-active {
+  transition: all 0.3s ease;
+}
+
+.calendar-item-leave-active {
+  position: absolute; /* Take out of flow */
+  left: 0;
+  right: 0;
+  z-index: 0;
+}
+
+.calendar-item-enter-from {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.calendar-item-leave-to {
+  opacity: 0;
+  transform: scale(0.5);
 }
 </style>
