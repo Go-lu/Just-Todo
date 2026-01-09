@@ -14,6 +14,10 @@ const props = defineProps({
   minDate: {
     type: [String, Number, Date],
     default: ''
+  },
+  showClear: {
+    type: Boolean,
+    default: true
   }
 });
 
@@ -175,7 +179,7 @@ const clear = () => {
       </div>
       
       <div class="actions">
-        <button class="text-btn" @click="clear">清除</button>
+        <button v-if="showClear" class="text-btn" @click="clear">清除</button>
         <button class="text-btn" @click="setToday">今天</button>
         <button class="confirm-btn" @click="confirm">确定</button>
       </div>

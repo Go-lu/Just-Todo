@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import Sidebar from './components/Sidebar.vue';
 import TodoList from './components/TodoList.vue';
@@ -6,6 +6,7 @@ import CalendarView from './components/CalendarView.vue';
 import TaskModal from './components/TaskModal.vue';
 import TaskDrawer from './components/TaskDrawer.vue';
 import DateTimePicker from './components/DateTimePicker.vue';
+import Toast from './components/Toast.vue';
 import { db } from './utils/db';
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
@@ -37,6 +38,21 @@ const taskDrawer = ref({
   visible: false,
   initialData: {}
 });
+
+const toast = ref({
+  visible: false,
+  message: '',
+  type: 'success'
+});
+
+const showToast = (message, type = 'success') => {
+  toast.value.message = message;
+  toast.value.type = type;
+  toast.value.visible = true;
+  setTimeout(() => {
+    toast.value.visible = false;
+  }, 2000);
+};
 
 const themeMode = ref('system');
 const applyTheme = (mode) => {
@@ -217,36 +233,47 @@ onMounted(() => {
 
 // Methods
 const loadData = () => {
-  categories.value = db.getCategories();
-  todos.value = db.getTodos();
-  
-  // Ensure default categories exist if empty
-  if (categories.value.length === 0) {
-    categories.value = [
-      { id: 'default', name: '默认清单', sort: 0, icon: 'ri-file-list-line', color: '#1890ff' },
-      { id: 'work', name: '工作', sort: 1, icon: 'ri-briefcase-line', color: '#52c41a' },
-      { id: 'life', name: '生活', sort: 2, icon: 'ri-home-smile-line', color: '#faad14' }
-    ];
-    saveCategories();
-  } else {
-    // Migration: Add icon and color if missing
-    let changed = false;
-    categories.value.forEach(c => {
-      if (!c.icon || !c.icon.startsWith('ri-')) {
-        // Simple mapping or default
-        if (c.name.includes('工作')) c.icon = 'ri-briefcase-line';
-        else if (c.name.includes('生活')) c.icon = 'ri-home-smile-line';
-        else c.icon = 'ri-list-check';
-        changed = true;
-      }
-      if (!c.color) {
-        c.color = '#666666';
-        changed = true;
-      }
-      // Fix specific defaults if they are standard ones
-      if (c.id === 'default' && c.icon === 'ri-list-check') c.icon = 'ri-file-list-line';
-    });
-    if (changed) saveCategories();
+  console.time('loadData');
+  try {
+    categories.value = db.getCategories();
+    todos.value = db.getTodos();
+    
+    // Ensure default categories exist if empty
+    if (categories.value.length === 0) {
+      categories.value = [
+        { id: 'default', name: '默认清单', sort: 0, icon: 'ri-file-list-line', color: '#1890ff' },
+        { id: 'work', name: '工作', sort: 1, icon: 'ri-briefcase-line', color: '#52c41a' },
+        { id: 'life', name: '生活', sort: 2, icon: 'ri-home-smile-line', color: '#faad14' }
+      ];
+      saveCategories();
+    } else {
+      // Migration: Add icon and color if missing
+      let changed = false;
+      categories.value.forEach(c => {
+        if (!c.icon || !c.icon.startsWith('ri-')) {
+          // Simple mapping or default
+          if (c.name.includes('工作')) c.icon = 'ri-briefcase-line';
+          else if (c.name.includes('生活')) c.icon = 'ri-home-smile-line';
+          else c.icon = 'ri-list-check';
+          changed = true;
+        }
+        if (!c.color) {
+          c.color = '#666666';
+          changed = true;
+        }
+        // Fix specific defaults if they are standard ones
+        if (c.id === 'default' && c.icon === 'ri-list-check') c.icon = 'ri-file-list-line';
+      });
+      if (changed) saveCategories();
+    }
+  } catch (error) {
+    console.error('Failed to load data:', error);
+    // Try to recover or show notification
+    if (window.utools) {
+       window.utools.showNotification('数据加载失败: ' + error.message);
+    }
+  } finally {
+    console.timeEnd('loadData');
   }
 };
 
@@ -304,6 +331,7 @@ const handleDrawerSave = (taskData) => {
     addTodo(taskData);
   }
   taskDrawer.value.visible = false;
+  showToast('保存成功');
 };
 
 const handleDrawerDelay = ({ id, date }) => {
@@ -348,11 +376,13 @@ const addTodo = (todoData) => {
     content: todoData.content,
     categoryId: todoData.categoryId,
     description: todoData.description || '',
-    isCompleted: false,
+    isCompleted: !!todoData.isCompleted,
     priority: todoData.priority || 'medium',
     createdAt: Date.now(),
     dueDate: todoData.dueDate || null,
-    repeatRule: todoData.repeatRule !== 'none' ? todoData.repeatRule : null
+    repeatRule: todoData.repeatRule !== 'none' ? todoData.repeatRule : null,
+    subtasks: todoData.subtasks || [],
+    attachments: todoData.attachments || []
   };
   todos.value.unshift(newTodo);
   saveTodos();
@@ -402,7 +432,11 @@ const updateTodo = (updatedTodo) => {
       shouldRecur = true;
     }
     
-    todos.value[index] = updatedTodo;
+    todos.value[index] = {
+      ...oldTodo,
+      ...updatedTodo,
+      attachments: updatedTodo.attachments !== undefined ? updatedTodo.attachments : (oldTodo.attachments || [])
+    };
 
     if (shouldRecur) {
       handleRecurrence(updatedTodo);
@@ -905,9 +939,9 @@ const exportMarkdown = () => {
         <div class="menu-item has-submenu">
            设置优先级
            <div class="submenu">
-             <div class="menu-item" @click="handleMenuAction('priority', 'high')">🔴 高优先级</div>
-             <div class="menu-item" @click="handleMenuAction('priority', 'medium')">🟠 中优先级</div>
-             <div class="menu-item" @click="handleMenuAction('priority', 'low')">🟢 低优先级</div>
+             <div class="menu-item" @click="handleMenuAction('priority', 'high')">🔴 高</div>
+             <div class="menu-item" @click="handleMenuAction('priority', 'medium')">🟠 中</div>
+             <div class="menu-item" @click="handleMenuAction('priority', 'low')">🟢 低</div>
            </div>
         </div>
         <div class="menu-item has-submenu">
@@ -1025,6 +1059,12 @@ const exportMarkdown = () => {
       :initial-data="taskModal.initialData"
       :default-category-id="currentCategoryId"
       @save="handleTaskSave"
+    />
+
+    <Toast
+      :visible="toast.visible"
+      :message="toast.message"
+      :type="toast.type"
     />
   </div>
 </template>
