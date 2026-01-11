@@ -77,34 +77,75 @@ const getAttachmentIcon = (att) => {
 const previewVisible = ref(false);
 const previewAttachment = ref(null);
 const previewText = ref('');
+const previewEncoding = ref('utf-8');
+const previewBytes = ref(null);
 
-const isImageAttachment = (att) => att && att.type && att.type.startsWith('image/');
-const isTextAttachment = (att) => att && att.type && (att.type.startsWith('text/') || att.name.endsWith('.txt') || att.name.endsWith('.md') || att.name.endsWith('.json') || att.name.endsWith('.js') || att.name.endsWith('.css') || att.name.endsWith('.html'));
+const encodingOptions = [
+  { value: 'utf-8', label: 'UTF-8' },
+  { value: 'gbk', label: 'GBK' },
+  { value: 'gb18030', label: 'GB18030' },
+  { value: 'iso-8859-1', label: 'ISO-8859-1' },
+];
+
+const dataUrlToUint8Array = (dataUrl) => {
+  const idx = (dataUrl || '').indexOf(',');
+  if (idx === -1) return new Uint8Array();
+  const header = dataUrl.slice(0, idx);
+  const base64 = dataUrl.slice(idx + 1);
+  const isBase64 = header.includes(';base64');
+  if (!isBase64) {
+    const text = decodeURIComponent(base64);
+    return new TextEncoder().encode(text);
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
+
+const isImageAttachment = (att) => {
+  const mime = att?.mimeType || '';
+  if (mime.startsWith('image/')) return true;
+  const name = (att?.name || '').toLowerCase();
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(name);
+};
+
+const isTextAttachment = (att) => {
+  const mime = att?.mimeType || '';
+  if (mime.startsWith('text/')) return true;
+  const name = (att?.name || '').toLowerCase();
+  return /\.(txt|md|json|js|ts|vue|html|css|log|yml|yaml|xml|csv)$/.test(name);
+};
 
 const openPreview = async (att) => {
   previewAttachment.value = att;
+  previewText.value = '';
+  previewEncoding.value = 'utf-8';
+  previewBytes.value = null;
   
-  if (isTextAttachment(att)) {
-    if (att.dataUrl) {
-      // Decode base64 if it is base64, otherwise use as is
-      try {
-        const base64Content = att.dataUrl.split(',')[1];
-        if (base64Content) {
-            previewText.value = decodeURIComponent(escape(window.atob(base64Content)));
-        } else {
-            previewText.value = att.dataUrl; // Fallback
-        }
-      } catch (e) {
-        previewText.value = '无法预览内容';
-      }
-    } else {
-      previewText.value = '内容为空';
+  if (isTextAttachment(att) && att?.dataUrl) {
+    try {
+      const bytes = dataUrlToUint8Array(att.dataUrl);
+      previewBytes.value = bytes;
+      previewText.value = new TextDecoder(previewEncoding.value).decode(bytes);
+    } catch (e) {
+      previewText.value = '预览失败';
     }
   }
   
   previewVisible.value = true;
   // Hide dropdown
   hoveredAttachmentId.value = null;
+};
+
+const changeEncoding = () => {
+  if (previewBytes.value) {
+    try {
+      previewText.value = new TextDecoder(previewEncoding.value).decode(previewBytes.value);
+    } catch (e) {
+      previewText.value = '解码失败';
+    }
+  }
 };
 
 const closePreview = () => {
@@ -115,12 +156,17 @@ const closePreview = () => {
 
 const downloadAttachment = (att) => {
   if (!att || !att.dataUrl) return;
+  const bytes = dataUrlToUint8Array(att.dataUrl);
+  const mime = att.mimeType || 'application/octet-stream';
+  const blob = new Blob([bytes], { type: mime });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.href = att.dataUrl;
-  link.download = att.name;
+  link.href = url;
+  link.download = att.name || 'attachment';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };
 
 const todosList = computed({
@@ -182,7 +228,28 @@ const getCategoryName = (id) => {
   return cat ? cat.name : '未分类';
 };
 
-// Grouping Logic
+// Helper for Overdue
+    const isOverdue = (todo) => {
+      if (!todo.dueDate || todo.isCompleted) return false;
+      // If has time (length > 10, e.g., "YYYY-MM-DD HH:mm"), compare exact time
+      if (todo.dueDate.length > 10) {
+        return dayjs(todo.dueDate).isBefore(dayjs());
+      }
+      // If date only, compare day
+      return dayjs(todo.dueDate).isBefore(dayjs(), 'day');
+    };
+
+    const formatDueDate = (dueDate) => {
+      if (!dueDate) return '';
+      // If has time, show MM-DD HH:mm
+      if (dueDate.length > 10) {
+        return dayjs(dueDate).format('MM-DD HH:mm');
+      }
+      // Date only
+      return dayjs(dueDate).format('MM-DD');
+    };
+    
+    // Grouping Logic
 const displayGroups = computed(() => {
   const groups = [];
   const list = props.todos;
@@ -528,22 +595,22 @@ const leave = (el) => {
                          >
                            <i class="ri-list-check"></i> {{ getSubtaskProgress(element) }}
                          </span>
-                         <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: dayjs(element.dueDate).isBefore(dayjs(), 'day') && !element.isCompleted }">
-                           <i class="ri-calendar-line"></i> {{ dayjs(element.dueDate).format('MM-DD') }}
+                         <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
+                           <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
                          </span>
                          <span v-if="element.repeatRule" class="meta-tag">
                            <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
                          </span>
+                         <div 
+                           v-if="element.attachments && element.attachments.length > 0"
+                           class="attachment-icon-wrapper"
+                           @mouseenter="(e) => showAttachments(element.id, element.attachments, e)"
+                           @mouseleave="hideAttachments"
+                         >
+                             <i class="ri-attachment-line"></i>
+                             <span class="count">{{ element.attachments.length }}</span>
+                         </div>
                       </div>
-                    </div>
-                    <div 
-                      v-if="element.attachments && element.attachments.length > 0"
-                      class="attachment-icon-wrapper"
-                      @mouseenter="(e) => showAttachments(element.id, element.attachments, e)"
-                      @mouseleave="hideAttachments"
-                    >
-                        <i class="ri-attachment-line"></i>
-                        <span class="count">{{ element.attachments.length }}</span>
                     </div>
                   </div>
 
@@ -628,8 +695,8 @@ const leave = (el) => {
                      >
                        <i class="ri-list-check"></i> {{ getSubtaskProgress(element) }}
                      </span>
-                     <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: dayjs(element.dueDate).isBefore(dayjs(), 'day') && !element.isCompleted }">
-                       <i class="ri-calendar-line"></i> {{ dayjs(element.dueDate).format('MM-DD') }}
+                     <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
+                       <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
                      </span>
                      <span v-if="element.repeatRule && !element.isCompleted" class="meta-tag">
                        <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
@@ -637,17 +704,17 @@ const leave = (el) => {
                      <span v-if="element.completedAt" class="meta-tag completed-time">
                        <i class="ri-check-double-line"></i> {{ dayjs(element.completedAt).format('MM-DD HH:mm') }}
                      </span>
+                     <div 
+                       v-if="element.attachments && element.attachments.length > 0"
+                       class="attachment-icon-wrapper"
+                       @mouseenter="(e) => showAttachments(element.id, element.attachments, e)"
+                       @mouseleave="hideAttachments"
+                     >
+                         <i class="ri-attachment-line"></i>
+                         <span class="count">{{ element.attachments.length }}</span>
+                     </div>
 
                    </div>
-                 </div>
-                 <div 
-                   v-if="element.attachments && element.attachments.length > 0"
-                   class="attachment-icon-wrapper"
-                   @mouseenter="(e) => showAttachments(element.id, element.attachments, e)"
-                   @mouseleave="hideAttachments"
-                 >
-                     <i class="ri-attachment-line"></i>
-                     <span class="count">{{ element.attachments.length }}</span>
                  </div>
                </div>
 
@@ -725,6 +792,16 @@ const leave = (el) => {
         <div class="preview-header">
           <span class="preview-title">{{ previewAttachment?.name }}</span>
           <div class="preview-actions">
+              <select 
+                v-if="isTextAttachment(previewAttachment)" 
+                v-model="previewEncoding" 
+                @change="changeEncoding"
+                class="encoding-select"
+              >
+                <option v-for="opt in encodingOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
               <button class="preview-download-btn" @click="downloadAttachment(previewAttachment)">
                 <i class="ri-download-2-line"></i> 下载
               </button>
@@ -1234,13 +1311,12 @@ const leave = (el) => {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
-  margin-left: 8px;
+  padding: 2px 8px;
   border-radius: 6px;
   color: var(--secondary-text);
   cursor: pointer;
   transition: all 0.2s;
-  font-size: 13px;
+  font-size: 11px;
   
   &:hover {
     background: var(--active-bg);
@@ -1248,11 +1324,11 @@ const leave = (el) => {
   }
   
   i {
-    font-size: 16px;
+    font-size: 12px;
   }
   
   .count {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
   }
 }
@@ -1348,6 +1424,26 @@ const leave = (el) => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.encoding-select {
+  padding: 6px 24px 6px 8px; /* Extra right padding for arrow */
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24' fill='%23666'%3e%3cpath fill='none' d='M0 0h24v24H0z'/%3e%3cpath d='M12 13.172l4.95-4.95 1.414 1.414L12 16 5.636 9.636 7.05 8.222z'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  background-size: 16px;
+  
+  &:hover {
+    border-color: var(--primary-color);
+  }
 }
 
 .preview-download-btn {

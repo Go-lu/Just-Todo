@@ -76,6 +76,15 @@ const attachmentsInputRef = ref(null);
 const previewVisible = ref(false);
 const previewAttachment = ref(null);
 const previewText = ref('');
+const previewEncoding = ref('utf-8');
+const previewBytes = ref(null);
+
+const encodingOptions = [
+  { value: 'utf-8', label: 'UTF-8' },
+  { value: 'gbk', label: 'GBK' },
+  { value: 'gb18030', label: 'GB18030' },
+  { value: 'iso-8859-1', label: 'ISO-8859-1' },
+];
 
 const openFilePicker = () => {
   attachmentsInputRef.value?.click();
@@ -152,15 +161,29 @@ const downloadAttachment = (att) => {
 const openPreview = (att) => {
   previewAttachment.value = att;
   previewText.value = '';
+  previewEncoding.value = 'utf-8';
+  previewBytes.value = null;
+
   if (isTextAttachment(att) && att?.dataUrl) {
     try {
       const bytes = dataUrlToUint8Array(att.dataUrl);
-      previewText.value = new TextDecoder('utf-8').decode(bytes);
+      previewBytes.value = bytes;
+      previewText.value = new TextDecoder(previewEncoding.value).decode(bytes);
     } catch (e) {
       previewText.value = '预览失败';
     }
   }
   previewVisible.value = true;
+};
+
+const changeEncoding = () => {
+  if (previewBytes.value) {
+    try {
+      previewText.value = new TextDecoder(previewEncoding.value).decode(previewBytes.value);
+    } catch (e) {
+      previewText.value = '解码失败';
+    }
+  }
 };
 
 const closePreview = () => {
@@ -793,9 +816,19 @@ const onOverlayClick = () => {
           <div class="preview-header">
             <span>{{ previewAttachment?.name }}</span>
             <div class="preview-actions">
-               <button class="preview-download-btn" @click="downloadAttachment(previewAttachment)">
-                 <i class="ri-download-2-line"></i> 下载
-               </button>
+            <select 
+              v-if="isTextAttachment(previewAttachment)" 
+              v-model="previewEncoding" 
+              @change="changeEncoding"
+              class="encoding-select"
+            >
+              <option v-for="opt in encodingOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+            <button class="preview-download-btn" @click="downloadAttachment(previewAttachment)">
+              <i class="ri-download-2-line"></i> 下载
+            </button>
                <button class="close-btn" @click="closePreview"><i class="ri-close-line"></i></button>
             </div>
           </div>
@@ -1621,9 +1654,31 @@ button.confirm-btn {
       color: white;
       border-radius: 6px;
       font-size: 13px;
+      border: none;
+      cursor: pointer;
       
       &:hover {
         opacity: 0.9;
+      }
+    }
+
+    .encoding-select {
+      padding: 6px 24px 6px 8px; /* Extra right padding for arrow */
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: var(--bg-color);
+      color: var(--text-color);
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24' fill='%23666'%3e%3cpath fill='none' d='M0 0h24v24H0z'/%3e%3cpath d='M12 13.172l4.95-4.95 1.414 1.414L12 16 5.636 9.636 7.05 8.222z'/%3e%3c/svg%3e");
+      background-repeat: no-repeat;
+      background-position: right 4px center;
+      background-size: 16px;
+
+      &:hover {
+        border-color: var(--primary-color);
       }
     }
 
