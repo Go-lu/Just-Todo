@@ -5,16 +5,19 @@ import TodoList from './components/TodoList.vue';
 import CalendarView from './components/CalendarView.vue';
 import TaskModal from './components/TaskModal.vue';
 import TaskDrawer from './components/TaskDrawer.vue';
+import SettingsModal from './components/SettingsModal.vue';
 import DateTimePicker from './components/DateTimePicker.vue';
 import Toast from './components/Toast.vue';
 import { db } from './utils/db';
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
+import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import 'dayjs/locale/zh-cn';
 import confetti from 'canvas-confetti';
 
 dayjs.extend(isSameOrBefore);
+dayjs.extend(isSameOrAfter);
 dayjs.locale('zh-cn');
 
 // State
@@ -38,6 +41,10 @@ const taskDrawer = ref({
   visible: false,
   initialData: {}
 });
+const settingsVisible = ref(false);
+const notificationSettings = ref({});
+const notifiedTasks = ref(new Set());
+let notificationTimer = null;
 
 const toast = ref({
   visible: false,
@@ -77,14 +84,23 @@ watch(themeMode, (val) => {
   localStorage.setItem('theme-mode', val);
   applyTheme(val);
 });
+const isPinned = ref(false);
+
 onMounted(() => {
   const saved = localStorage.getItem('theme-mode') || 'system';
   themeMode.value = saved;
   applyTheme(saved);
   mediaQuery && mediaQuery.addEventListener('change', handleSystemThemeChange);
+
+  if (window.utools) {
+    // window.utools.isAlwaysOnTop might not exist in some versions
+    // We rely on local state or default to false
+    // isPinned.value = window.utools.isAlwaysOnTop();
+  }
 });
 onUnmounted(() => {
   mediaQuery && mediaQuery.removeEventListener('change', handleSystemThemeChange);
+  if (notificationTimer) clearInterval(notificationTimer);
 });
 const minDate = ref(dayjs().format('YYYY-MM-DD'));
 
@@ -229,6 +245,10 @@ onMounted(() => {
   }
 
   document.addEventListener('click', closeContextMenu);
+  
+  // Start Notification Scheduler
+  checkNotifications(); // Check immediately
+  notificationTimer = setInterval(checkNotifications, 60000);
 });
 
 // Methods
@@ -237,6 +257,8 @@ const loadData = () => {
   try {
     categories.value = db.getCategories();
     todos.value = db.getTodos();
+    const settings = db.getSettings();
+    notificationSettings.value = settings.notification || {};
     
     // Ensure default categories exist if empty
     if (categories.value.length === 0) {
@@ -497,6 +519,342 @@ const handleRecurrence = (todo) => {
   // Old task remains completed
 };
 
+// Notification Logic
+const checkNotifications = () => {
+  const settings = notificationSettings.value;
+  if (!settings) return;
+  
+  const now = dayjs();
+  
+  todos.value.forEach(todo => {
+    if (todo.isCompleted || !todo.dueDate) return;
+    if (notifiedTasks.value.has(todo.id)) return;
+    
+    // Determine trigger time
+    let dueTime = dayjs(todo.dueDate);
+    if (todo.dueDate.length === 10) {
+      dueTime = dueTime.hour(9).minute(0).second(0);
+    }
+    
+    // Advance time (General settings > Desktop settings > 0)
+    let advance = 0;
+    if (settings.general && typeof settings.general.advanceMinutes === 'number') {
+      advance = settings.general.advanceMinutes;
+    } else if (settings.desktop && settings.desktop.advanceMinutes) {
+      advance = settings.desktop.advanceMinutes;
+    }
+    
+    const triggerTime = dueTime.subtract(advance, 'minute');
+    
+    if (now.isSameOrAfter(triggerTime)) {
+       const diff = now.diff(triggerTime, 'minute');
+       if (diff >= 0 && diff < 60) { // Notify if within 1 hour of due/trigger time
+         sendNotification(todo);
+         notifiedTasks.value.add(todo.id);
+       } else if (diff >= 60) {
+         // Mark as notified to avoid spam for old tasks
+         notifiedTasks.value.add(todo.id);
+       }
+    }
+  });
+};
+
+const sendNotification = async (todo) => {
+  const settings = notificationSettings.value;
+  const title = '待办提醒';
+  const body = `任务 "${todo.content}" 即将到期`;
+  
+  // Desktop
+  if (settings.desktop?.enabled) {
+    const options = { 
+      body, 
+      requireInteraction: true // Requires user interaction to close
+    };
+    
+    // Always try HTML5 Notification API first for better control (requireInteraction)
+    if (Notification.permission === 'granted') {
+       try {
+         new Notification(title, options);
+       } catch (e) {
+         console.error('Notification API failed', e);
+         // Fallback to uTools native notification
+         if (window.utools) window.utools.showNotification(body);
+       }
+    } else if (Notification.permission !== 'denied') {
+       Notification.requestPermission().then(permission => {
+         if (permission === 'granted') {
+           try {
+             new Notification(title, options);
+           } catch (e) {
+             if (window.utools) window.utools.showNotification(body);
+           }
+         }
+       });
+    } else {
+        // Fallback
+        if (window.utools) {
+            window.utools.showNotification(body);
+        }
+    }
+  }
+  
+  // Bark
+  if (settings.bark?.enabled && settings.bark.serverUrl) {
+    try {
+      const baseUrl = settings.bark.serverUrl.endsWith('/') ? settings.bark.serverUrl : settings.bark.serverUrl + '/';
+      const params = new URLSearchParams();
+      if (settings.bark.level) params.append('level', settings.bark.level);
+      if (settings.bark.sound) params.append('sound', settings.bark.sound);
+      if (settings.bark.badge) params.append('badge', settings.bark.badge);
+      
+      const finalUrl = `${baseUrl}${encodeURIComponent(title)}/${encodeURIComponent(body)}?${params.toString()}`;
+      await fetch(finalUrl);
+    } catch (e) {
+      console.error('Bark failed', e);
+    }
+  }
+  
+  // Webhook
+  if (settings.webhook?.enabled && settings.webhook.url) {
+    try {
+        const method = settings.webhook.method || 'POST';
+        const headers = {};
+        if (settings.webhook.headers && Array.isArray(settings.webhook.headers)) {
+          settings.webhook.headers.forEach(h => {
+            if (h.key) headers[h.key] = h.value;
+          });
+        }
+
+        const payload = {
+          event: 'todo_due',
+          title: title,
+          body: body,
+          todo: todo
+        };
+
+        if (settings.webhook.customBody) {
+          try {
+            const custom = JSON.parse(settings.webhook.customBody);
+            Object.assign(payload, custom);
+          } catch (e) {
+            console.warn('Invalid custom body JSON', e);
+          }
+        }
+
+        if (method === 'GET') {
+             const url = new URL(settings.webhook.url);
+             Object.keys(payload).forEach(k => {
+               const val = payload[k];
+               url.searchParams.append(k, typeof val === 'object' ? JSON.stringify(val) : val);
+             });
+             await fetch(url.toString(), { method: 'GET', headers });
+        } else {
+            let bodyContent;
+            const contentType = settings.webhook.contentType || 'application/json';
+            if (!headers['Content-Type']) headers['Content-Type'] = contentType;
+
+            if (contentType === 'application/json') {
+               bodyContent = JSON.stringify(payload);
+            } else if (contentType === 'application/x-www-form-urlencoded') {
+               const params = new URLSearchParams();
+               Object.keys(payload).forEach(key => {
+                 const val = payload[key];
+                 params.append(key, typeof val === 'object' ? JSON.stringify(val) : val);
+               });
+               bodyContent = params;
+            }
+
+            await fetch(settings.webhook.url, {
+                method: 'POST',
+                headers: headers,
+                body: bodyContent
+            });
+        }
+    } catch (e) {
+      console.error('Webhook failed', e);
+    }
+  }
+  
+  // Email
+  if (settings.email?.enabled) {
+    notifyEmail(settings.email, title, body);
+  }
+};
+
+const notifyEmail = async (config, subject, text) => {
+    if (!window.services?.sendEmail) return;
+    const from = config.alias ? `"${config.alias}" <${config.user}>` : config.user;
+
+    const transportConfig = {
+        host: config.host,
+        port: Number(config.port),
+        secure: config.secure,
+        auth: {
+            user: config.user,
+            pass: config.pass
+        }
+    };
+
+    const mailOptions = {
+        from: from,
+        to: config.to,
+        subject,
+        text
+    };
+    const res = await window.services.sendEmail(transportConfig, mailOptions);
+    if (!res.success) {
+        console.error('Email failed', res.error);
+        if (window.utools) {
+             window.utools.showNotification('邮件发送失败: ' + res.error);
+        }
+    }
+};
+
+// Settings Actions
+const handleSaveSettings = (newSettings) => {
+  const currentSettings = db.getSettings();
+  currentSettings.notification = newSettings;
+  db.saveSettings(currentSettings);
+  notificationSettings.value = newSettings;
+  showToast('设置已保存');
+};
+
+const testDesktop = (config) => {
+  const title = '测试通知';
+  const body = '这是一条测试通知';
+  const options = { 
+    body, 
+    requireInteraction: true 
+  };
+
+  // Try HTML5 Notification first
+  if (Notification.permission === 'granted') {
+     try {
+       new Notification(title, options);
+     } catch (e) {
+       if (window.utools) window.utools.showNotification(body);
+     }
+  } else if (Notification.permission !== 'denied') {
+     Notification.requestPermission().then(permission => {
+       if (permission === 'granted') {
+         new Notification(title, options);
+       }
+     });
+  } else {
+    if (window.utools) {
+      window.utools.showNotification(body);
+    }
+  }
+  showToast('已发送桌面通知');
+};
+
+const testBark = async (config) => {
+  if (!config.serverUrl) return;
+  try {
+      const baseUrl = config.serverUrl.endsWith('/') ? config.serverUrl : config.serverUrl + '/';
+      const params = new URLSearchParams();
+      if (config.level) params.append('level', config.level);
+      if (config.sound) params.append('sound', config.sound);
+      if (config.badge) params.append('badge', config.badge);
+
+      const finalUrl = `${baseUrl}${encodeURIComponent('测试通知')}/${encodeURIComponent('这是一条测试消息')}?${params.toString()}`;
+      await fetch(finalUrl);
+      showToast('已发送 Bark 请求');
+  } catch (e) {
+      showToast('Bark 请求失败: ' + e.message, 'error');
+  }
+};
+
+const testWebhook = async (config) => {
+  if (!config.url) return;
+  try {
+    const method = config.method || 'POST';
+    const headers = {};
+    if (config.headers && Array.isArray(config.headers)) {
+      config.headers.forEach(h => {
+        if (h.key) headers[h.key] = h.value;
+      });
+    }
+
+    const payload = {
+       event: 'test_notification',
+       title: '测试通知',
+       body: '这是一条测试消息'
+    };
+
+    if (config.customBody) {
+      try {
+        const custom = JSON.parse(config.customBody);
+        Object.assign(payload, custom);
+      } catch (e) {
+        console.warn('Invalid custom body JSON', e);
+      }
+    }
+
+    if (method === 'GET') {
+         const url = new URL(config.url);
+         Object.keys(payload).forEach(k => {
+            const val = payload[k];
+            url.searchParams.append(k, typeof val === 'object' ? JSON.stringify(val) : val);
+         });
+         await fetch(url.toString(), { method: 'GET', headers });
+    } else {
+        let bodyContent;
+        const contentType = config.contentType || 'application/json';
+        if (!headers['Content-Type']) headers['Content-Type'] = contentType;
+
+        if (contentType === 'application/json') {
+           bodyContent = JSON.stringify(payload);
+        } else if (contentType === 'application/x-www-form-urlencoded') {
+           const params = new URLSearchParams();
+           Object.keys(payload).forEach(key => {
+             const val = payload[key];
+             params.append(key, typeof val === 'object' ? JSON.stringify(val) : val);
+           });
+           bodyContent = params;
+        }
+
+        await fetch(config.url, {
+            method: 'POST',
+            headers: headers,
+            body: bodyContent
+        });
+    }
+    showToast('已发送 Webhook 请求');
+  } catch (e) {
+      showToast('Webhook 请求失败: ' + e.message, 'error');
+  }
+};
+
+const testEmail = async (config) => {
+    showToast('正在发送邮件...');
+    const from = config.alias ? `"${config.alias}" <${config.user}>` : config.user;
+    
+    // Construct Nodemailer transport config with proper auth structure
+    const transportConfig = {
+        host: config.host,
+        port: Number(config.port),
+        secure: config.secure,
+        auth: {
+            user: config.user,
+            pass: config.pass
+        }
+    };
+
+    const res = await window.services?.sendEmail(transportConfig, {
+        from: from,
+        to: config.to,
+        subject: 'Just Todo 测试邮件',
+        text: '这是一条来自 Just Todo 的测试邮件。'
+    });
+    if (res && res.success) {
+        showToast('邮件发送成功');
+    } else {
+        showToast('邮件发送失败: ' + (res?.error || '未知错误'), 'error');
+    }
+};
+
+
 const getRepeatLabel = (rule, item) => {
   const date = item && item.dueDate ? dayjs(item.dueDate) : dayjs();
   switch(rule) {
@@ -685,24 +1043,7 @@ const handleMenuAction = (action, payload) => {
       }
     } else if (action === 'pin') {
       // Toggle Pin / Detach
-      if (window.utools) {
-         // Try windowDetach first (creates a separate window)
-         // If already detached, maybe we can't re-attach easily without restart, 
-         // but usually users want to "Pin to desktop" = Detach.
-         // Or maybe "Always on Top" for main window?
-         // Let's try to support both concepts if possible or just Detach as it's more "Desktop Widget" like.
-         // However, standard uTools usage might prefer "Always on Top" for the main window if they want to keep using it.
-         // "鍥哄畾鍒版闈? usually means "Stick to desktop" (Bottom layer) or "Pin" (Top layer).
-         // Given "Todo", likely "Always on Top" or "Detach".
-         // Let's go with setAlwaysOnTop as it's safer/simpler for now.
-         const isPinned = window.utools.isAlwaysOnTop();
-         window.utools.setAlwaysOnTop(!isPinned);
-         if (!isPinned) {
-            window.utools.showNotification('已开启置顶窗口');
-         } else {
-            window.utools.showNotification('已取消置顶');
-         }
-      }
+      togglePin();
     }
   } else if (type === 'todo') {
     if (action === 'delete') {
@@ -752,9 +1093,15 @@ const isUtools = typeof window !== 'undefined' && !!window.utools;
 
 const togglePin = () => {
   if (window.utools) {
-     const isPinned = window.utools.isAlwaysOnTop();
-     window.utools.setAlwaysOnTop(!isPinned);
-     if (!isPinned) {
+     const newPinned = !isPinned.value;
+     
+     // Try utools API if available
+     if (typeof window.utools.setAlwaysOnTop === 'function') {
+        window.utools.setAlwaysOnTop(newPinned);
+     }
+     
+     isPinned.value = newPinned;
+     if (newPinned) {
          window.utools.showNotification('已开启置顶窗口');
      } else {
          window.utools.showNotification('已取消置顶');
@@ -814,6 +1161,7 @@ const exportMarkdown = () => {
       @add-category="addCategory"
       @context-menu="showContextMenu"
       @theme-change="setThemeMode"
+      @open-settings="settingsVisible = true"
     />
     
     <main class="main-content">
@@ -822,6 +1170,11 @@ const exportMarkdown = () => {
           <h2>{{ currentCategoryName }}</h2>
         </div>
         <div class="header-right">
+          <!-- Pin Button -->
+          <button v-if="isUtools" class="icon-btn" @click="togglePin" :title="isPinned ? '取消置顶' : '置顶窗口'" :class="{ active: isPinned }" style="margin-right: 8px;">
+            <i class="ri-pushpin-line" :class="{ 'ri-pushpin-fill': isPinned }"></i>
+          </button>
+          
           <!-- Sort Button -->
           <div class="sort-wrapper">
              <button class="icon-btn" @click="toggleSortOrder" :title="sortState.order === 'asc' ? '切换为降序' : '切换为升序'" style="margin-right: 4px;">
@@ -966,6 +1319,16 @@ const exportMarkdown = () => {
       :default-category-id="currentCategoryId"
       @save="handleDrawerSave"
       @delay="handleDrawerDelay"
+    />
+
+    <SettingsModal
+      v-model:visible="settingsVisible"
+      :initial-settings="notificationSettings"
+      @save="handleSaveSettings"
+      @test-desktop="testDesktop"
+      @test-email="testEmail"
+      @test-bark="testBark"
+      @test-webhook="testWebhook"
     />
 
     <div v-if="inputModal.visible" class="modal-overlay" @click.self="cancelInputModal">
