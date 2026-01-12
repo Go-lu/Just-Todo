@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Sticky Note</title>
+</head>
+<body>
+  <script>
+    // Get target URL from query parameters
+    const params = new URLSearchParams(window.location.search);
+    // Default to relative index.html if no target provided
+    const target = params.get('target') || 'index.html#/sticky';
+    window.location.replace(target);
+  </script>
+</body>
+</html>
