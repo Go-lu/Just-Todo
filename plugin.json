@@ -3,7 +3,7 @@
   "preload": "public/preload/services.js",
   "logo": "public/logo.png",
   "development": {
-    "main": "http://localhost:5173"
+    "main": "http://127.0.0.1:5173"
   },
   "features": [
     {
