@@ -757,7 +757,7 @@ const leave = (el) => {
       </div>
       
       <div v-if="displayGroups.length === 0" class="empty-state">
-        <img src="https://cdn.jsdelivr.net/npm/remixicon@2.5.0/icons/System/checkbox-circle-line.svg" style="width: 48px; opacity: 0.2; margin-bottom: 10px;">
+        <i class="ri-checkbox-circle-line" style="font-size: 48px; opacity: 0.2; margin-bottom: 10px;"></i>
         <div>暂无待办事项</div>
       </div>
       </div>
