@@ -1108,6 +1108,7 @@ const togglePin = () => {
         minimizable: false,
         maximizable: false,
         alwaysOnTop: true,
+        skipTaskbar: true,
         webPreferences: {
             preload: 'preload/services.js'
         }

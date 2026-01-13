@@ -29,8 +29,14 @@ const menuVisible = ref(false);
 // Initialize window state if possible
 onMounted(() => {
   if (window.utools) {
-    // Attempt to set initial state
-    // window.utools.setAlwaysOnTop(true); 
+    // Initialize opacity
+    try {
+        const { remote } = require('electron');
+        const win = remote.getCurrentWindow();
+        win.setOpacity(opacity.value);
+    } catch (e) {
+        console.error('Failed to set initial opacity', e);
+    }
   }
 });
 
@@ -87,7 +93,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="sticky-note" :style="{ opacity: opacity }">
+  <div class="sticky-note">
     <div class="sticky-header">
       <div class="drag-handle">
         <i class="ri-sticky-note-line"></i> 待办便签
