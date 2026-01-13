@@ -51,9 +51,28 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const nodemailer = require('nodemailer')
+const { remote } = require('electron')
 
 // 通过 window 对象向渲染进程注入 nodejs 能力
 window.services = {
+  // 设置窗口透明度
+  setOpacity(value) {
+    try {
+      const win = remote.getCurrentWindow()
+      win.setOpacity(value)
+    } catch (e) {
+      console.error('setOpacity failed', e)
+    }
+  },
+  // 设置窗口置顶
+  setAlwaysOnTop(flag) {
+    try {
+      const win = remote.getCurrentWindow()
+      win.setAlwaysOnTop(flag)
+    } catch (e) {
+      console.error('setAlwaysOnTop failed', e)
+    }
+  },
   // 读文件
   readFile (file) {
     return fs.readFileSync(file, { encoding: 'utf-8' })

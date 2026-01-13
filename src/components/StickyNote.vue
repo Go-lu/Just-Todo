@@ -26,18 +26,51 @@ const isAlwaysOnTop = ref(true);
 const opacity = ref(1);
 const menuVisible = ref(false);
 
+// Helper functions for window control
+const setWindowOpacity = (val) => {
+  // 1. Try preload service
+  if (window.services && window.services.setOpacity) {
+    window.services.setOpacity(val);
+    return;
+  }
+  // 2. Try direct electron access
+  try {
+    if (window.require) {
+        const { remote } = window.require('electron');
+        if (remote) remote.getCurrentWindow().setOpacity(val);
+    }
+  } catch (e) {
+    console.error('Failed to set opacity', e);
+  }
+};
+
+const setWindowTop = (flag) => {
+  // 1. Try preload service
+  if (window.services && window.services.setAlwaysOnTop) {
+    window.services.setAlwaysOnTop(flag);
+    return;
+  }
+  // 2. Try direct electron access
+  try {
+     if (window.require) {
+         const { remote } = window.require('electron');
+         if (remote) remote.getCurrentWindow().setAlwaysOnTop(flag);
+     }
+  } catch (e) {
+      console.error('Failed to set always on top', e);
+      // 3. Fallback to uTools API (mostly for main window, but worth a try)
+      if (window.utools && window.utools.setAlwaysOnTop) {
+          window.utools.setAlwaysOnTop(flag);
+      }
+  }
+};
+
 // Initialize window state if possible
 onMounted(() => {
-  if (window.utools) {
-    // Initialize opacity
-    try {
-        const { remote } = require('electron');
-        const win = remote.getCurrentWindow();
-        win.setOpacity(opacity.value);
-    } catch (e) {
-        console.error('Failed to set initial opacity', e);
-    }
-  }
+   document.documentElement.style.backgroundColor = 'transparent';
+   document.body.style.backgroundColor = 'transparent';
+   // setWindowOpacity(opacity.value);
+   setWindowTop(isAlwaysOnTop.value);
 });
 
 const toggleMenu = () => {
@@ -50,33 +83,13 @@ const handleClose = () => {
 
 const togglePin = () => {
   isAlwaysOnTop.value = !isAlwaysOnTop.value;
-  if (window.utools) {
-    try {
-        const { remote } = require('electron');
-        const win = remote.getCurrentWindow();
-        win.setAlwaysOnTop(isAlwaysOnTop.value);
-    } catch (e) {
-        console.error('Failed to set always on top', e);
-        // Fallback for newer uTools versions that might not expose remote directly or differently
-        if (window.utools.setAlwaysOnTop) {
-           window.utools.setAlwaysOnTop(isAlwaysOnTop.value);
-        }
-    }
-  }
+  setWindowTop(isAlwaysOnTop.value);
 };
 
 const updateOpacity = (e) => {
   const val = parseFloat(e.target.value);
   opacity.value = val;
-  if (window.utools) {
-    try {
-        const { remote } = require('electron');
-        const win = remote.getCurrentWindow();
-        win.setOpacity(val);
-    } catch (e) {
-        console.error('Failed to set opacity', e);
-    }
-  }
+  // setWindowOpacity(val);
 };
 
 // Close menu when clicking outside
@@ -93,7 +106,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="sticky-note">
+  <div class="sticky-note" :style="{ opacity: opacity }">
     <div class="sticky-header">
       <div class="drag-handle">
         <i class="ri-sticky-note-line"></i> 待办便签

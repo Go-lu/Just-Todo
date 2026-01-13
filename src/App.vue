@@ -1103,14 +1103,19 @@ const togglePin = () => {
         title: '待办便签',
         useContentSize: true,
         frame: false,
-        transparent: false,
+        transparent: true,
+        backgroundColor: '#00000000',
         resizable: true,
         minimizable: false,
         maximizable: false,
         alwaysOnTop: true,
         skipTaskbar: true,
         webPreferences: {
-            preload: 'preload/services.js'
+            preload: 'preload/services.js',
+            nodeIntegration: true,
+            contextIsolation: false,
+            enableRemoteModule: true,
+            backgroundThrottling: false
         }
      });
      window.utools.outPlugin();
