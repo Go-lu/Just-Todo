@@ -1,29 +1,37 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue';
+import TodoList from './TodoList.vue';
 
-const noteContent = ref('');
+const props = defineProps({
+  todos: {
+    type: Array,
+    default: () => []
+  },
+  categories: {
+    type: Array,
+    default: () => []
+  }
+});
+
+const emit = defineEmits([
+  'update:todos', 
+  'open-add-task', 
+  'update-todo', 
+  'context-menu', 
+  'item-click',
+  'close' // For closing the window
+]);
+
 const isAlwaysOnTop = ref(true);
 const opacity = ref(1);
 const menuVisible = ref(false);
 
-const emit = defineEmits(['close']);
-
-// Load content
+// Initialize window state if possible
 onMounted(() => {
-  const saved = localStorage.getItem('sticky-note-content');
-  if (saved) noteContent.value = saved;
-  
-  // Initialize window state if possible
   if (window.utools) {
     // Attempt to set initial state
     // window.utools.setAlwaysOnTop(true); 
-    // Opacity is usually set on window creation, but can be updated
   }
-});
-
-// Auto-save
-watch(noteContent, (val) => {
-  localStorage.setItem('sticky-note-content', val);
 });
 
 const toggleMenu = () => {
@@ -37,14 +45,16 @@ const handleClose = () => {
 const togglePin = () => {
   isAlwaysOnTop.value = !isAlwaysOnTop.value;
   if (window.utools) {
-    // Try standard uTools API if available, or Electron way
     try {
-        // This works if we are in a proper BrowserWindow created by uTools with node integration
         const { remote } = require('electron');
         const win = remote.getCurrentWindow();
         win.setAlwaysOnTop(isAlwaysOnTop.value);
     } catch (e) {
         console.error('Failed to set always on top', e);
+        // Fallback for newer uTools versions that might not expose remote directly or differently
+        if (window.utools.setAlwaysOnTop) {
+           window.utools.setAlwaysOnTop(isAlwaysOnTop.value);
+        }
     }
   }
 };
@@ -65,7 +75,7 @@ const updateOpacity = (e) => {
 
 // Close menu when clicking outside
 const closeMenu = (e) => {
-    if (!e.target.closest('.menu-container')) {
+    if (!e.target.closest('.menu-container') && !e.target.closest('.menu-btn')) {
         menuVisible.value = false;
     }
 }
@@ -80,7 +90,7 @@ onMounted(() => {
   <div class="sticky-note" :style="{ opacity: opacity }">
     <div class="sticky-header">
       <div class="drag-handle">
-        <i class="ri-sticky-note-line"></i> 便签
+        <i class="ri-sticky-note-line"></i> 待办便签
       </div>
       <div class="window-controls">
         <button class="icon-btn menu-btn" @click.stop="toggleMenu" title="设置">
@@ -99,30 +109,37 @@ onMounted(() => {
             <div class="toggle-knob"></div>
           </div>
         </div>
-        <div class="menu-item column">
-          <div class="row-between">
-            <span>透明度</span>
-            <span>{{ Math.round(opacity * 100) }}%</span>
+        <div class="menu-item opacity-item">
+          <span>透明度</span>
+          <div class="slider-wrapper">
+            <input 
+              type="range" 
+              min="0.05" 
+              max="1" 
+              step="0.01" 
+              :value="opacity" 
+              @input="updateOpacity"
+              class="slider"
+              :style="{ '--percent': (opacity - 0.05) / 0.95 }"
+            >
           </div>
-          <input 
-            type="range" 
-            min="0.2" 
-            max="1" 
-            step="0.1" 
-            :value="opacity" 
-            @input="updateOpacity"
-            class="slider"
-          >
+          <span class="value-text">{{ Math.round(opacity * 100) }}%</span>
         </div>
       </div>
     </div>
     
     <div class="sticky-body">
-      <textarea 
-        v-model="noteContent" 
-        placeholder="记录点什么..."
-        class="note-textarea"
-      ></textarea>
+       <TodoList 
+         :todos="todos" 
+         :categories="categories"
+         categoryId="all"
+         :sortState="{ field: 'default', order: 'asc' }"
+         @update:todos="(val) => emit('update:todos', val)"
+         @update-todo="(val) => emit('update-todo', val)"
+         @open-add-task="emit('open-add-task')"
+         @context-menu="(val) => emit('context-menu', val)"
+         @item-click="(val) => emit('item-click', val)"
+       />
     </div>
   </div>
 </template>
@@ -131,27 +148,24 @@ onMounted(() => {
 .sticky-note {
   width: 100vw;
   height: 100vh;
-  background-color: #fff7d1; /* Classic Sticky Note Yellow */
+  background-color: #fff; /* Changed to white for better TodoList contrast */
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  border: 1px solid #e6dfb8;
-  
-  /* Dark mode support logic can be added here if needed, 
-     but sticky notes are traditionally yellow. 
-     We can add a subtle dark theme override. */
+  border: 1px solid #e0e0e0;
 }
 
 .sticky-header {
   height: 32px;
-  background-color: #f5eeb5;
+  background-color: #f5f5f5;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 8px;
-  border-bottom: 1px solid #e6dfb8;
+  border-bottom: 1px solid #e0e0e0;
   position: relative;
+  flex-shrink: 0;
   
   .drag-handle {
     flex: 1;
@@ -159,7 +173,7 @@ onMounted(() => {
     display: flex;
     align-items: center;
     font-size: 12px;
-    color: #8c865d;
+    color: #666;
     gap: 6px;
     -webkit-app-region: drag; /* Electron drag region */
     user-select: none;
@@ -181,14 +195,14 @@ onMounted(() => {
   justify-content: center;
   border: none;
   background: transparent;
-  color: #8c865d;
+  color: #666;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
   
   &:hover {
     background-color: rgba(0,0,0,0.05);
-    color: #5c5840;
+    color: #333;
   }
   
   &.close-btn:hover {
@@ -199,32 +213,15 @@ onMounted(() => {
 
 .sticky-body {
   flex: 1;
-  padding: 0;
+  overflow: hidden; /* TodoList handles scrolling */
+  position: relative;
   
-  .note-textarea {
-    width: 100%;
-    height: 100%;
-    border: none;
-    resize: none;
-    background: transparent;
-    padding: 12px;
-    font-size: 14px;
-    line-height: 1.6;
-    color: #4a4a4a;
-    font-family: inherit;
-    outline: none;
+  /* Override TodoList padding if necessary via deep selector or wrapper */
+  :deep(.todo-list-container) {
+    padding: 0;
     
-    &::placeholder {
-      color: rgba(74, 74, 74, 0.4);
-    }
-    
-    /* Custom Scrollbar for the textarea */
-    &::-webkit-scrollbar {
-      width: 6px;
-    }
-    &::-webkit-scrollbar-thumb {
-      background-color: rgba(0,0,0,0.1);
-      border-radius: 3px;
+    .timeline-content {
+      padding: 10px 8px; /* Reduce padding */
     }
   }
 }
@@ -250,16 +247,21 @@ onMounted(() => {
     font-size: 13px;
     color: #333;
     
-    &.column {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 8px;
+    &.opacity-item {
+      justify-content: flex-start;
+      gap: 12px;
     }
-    
-    .row-between {
+
+    .slider-wrapper {
+      flex: 1;
       display: flex;
-      justify-content: space-between;
-      width: 100%;
+      align-items: center;
+    }
+
+    .value-text {
+      min-width: 36px;
+      text-align: right;
+      font-feature-settings: "tnum";
     }
   }
 }
@@ -296,20 +298,48 @@ onMounted(() => {
 
 .slider {
   width: 100%;
-  height: 4px;
-  background: #e0e0e0;
-  border-radius: 2px;
+  height: 12px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  background-image: linear-gradient(#1890ff, #1890ff), linear-gradient(#e0e0e0, #e0e0e0);
+  background-repeat: no-repeat;
+  background-size: calc((100% - 12px) * var(--percent)) 2px, calc(100% - 12px) 2px;
+  background-position: 6px center, 6px center;
+  border: none;
   outline: none;
+  box-shadow: none;
   -webkit-appearance: none;
+  cursor: pointer;
+
+  /* Hide default track */
+  &::-webkit-slider-runnable-track {
+    background: transparent;
+    border: none;
+  }
+
+  &:focus, &:active, &:hover {
+    outline: none;
+    border: none;
+    box-shadow: none;
+  }
   
   &::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 16px;
-    height: 16px;
+    width: 12px;
+    height: 12px;
     background: #1890ff;
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    box-shadow: none;
+    margin-top: 0;
+    transition: transform 0.2s;
+    position: relative;
+    z-index: 2;
+
+    &:hover {
+      transform: scale(1.2);
+    }
   }
 }
 

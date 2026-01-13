@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import Sidebar from './components/Sidebar.vue';
+import StickyNote from './components/StickyNote.vue';
 import TodoList from './components/TodoList.vue';
 import CalendarView from './components/CalendarView.vue';
 import TaskModal from './components/TaskModal.vue';
@@ -21,6 +22,7 @@ dayjs.extend(isSameOrAfter);
 dayjs.locale('zh-cn');
 
 // State
+const isSticky = ref(window.location.search.includes('mode=sticky') || window.location.hash.includes('sticky'));
 const categories = ref([]);
 const todos = ref([]);
 const currentCategoryId = ref('default');
@@ -1092,20 +1094,25 @@ const handleMenuAction = (action, payload) => {
 const isUtools = typeof window !== 'undefined' && !!window.utools;
 
 const togglePin = () => {
+  if (isSticky.value) return;
+
   if (window.utools) {
-     const newPinned = !isPinned.value;
-     
-     // Try utools API if available
-     if (typeof window.utools.setAlwaysOnTop === 'function') {
-        window.utools.setAlwaysOnTop(newPinned);
-     }
-     
-     isPinned.value = newPinned;
-     if (newPinned) {
-         window.utools.showNotification('已开启置顶窗口');
-     } else {
-         window.utools.showNotification('已取消置顶');
-     }
+     window.utools.createBrowserWindow('sticky.html', {
+        width: 320,
+        height: 500,
+        title: '待办便签',
+        useContentSize: true,
+        frame: false,
+        transparent: false,
+        resizable: true,
+        minimizable: false,
+        maximizable: false,
+        alwaysOnTop: true,
+        webPreferences: {
+            preload: 'preload/services.js'
+        }
+     });
+     window.utools.outPlugin();
   }
 };
 
@@ -1150,7 +1157,17 @@ const exportMarkdown = () => {
 </script>
 
 <template>
-  <div class="app-container">
+  <StickyNote 
+    v-if="isSticky"
+    :todos="todos"
+    :categories="categories"
+    @update:todos="handleTodosUpdate"
+    @open-add-task="openTaskModal({ categoryId: 'default' })"
+    @update-todo="updateTodo"
+    @context-menu="showContextMenu"
+    @item-click="openTaskDrawer"
+  />
+  <div v-else class="app-container">
     <Sidebar 
       :categories="categories" 
       :currentCategoryId="currentCategoryId"
@@ -1171,8 +1188,8 @@ const exportMarkdown = () => {
         </div>
         <div class="header-right">
           <!-- Pin Button -->
-          <button v-if="isUtools" class="icon-btn" @click="togglePin" :title="isPinned ? '取消置顶' : '置顶窗口'" :class="{ active: isPinned }" style="margin-right: 8px;">
-            <i class="ri-pushpin-line" :class="{ 'ri-pushpin-fill': isPinned }"></i>
+          <button v-if="isUtools" class="icon-btn" @click="togglePin" title="开启便签模式" style="margin-right: 8px;">
+            <i class="ri-pushpin-line"></i>
           </button>
           
           <!-- Sort Button -->
@@ -1311,6 +1328,7 @@ const exportMarkdown = () => {
       </template>
     </div>
 
+  </div>
     <!-- Input Modal -->
     <TaskDrawer 
       v-model:visible="taskDrawer.visible"
@@ -1429,7 +1447,6 @@ const exportMarkdown = () => {
       :message="toast.message"
       :type="toast.type"
     />
-  </div>
 </template>
 
 <style scoped lang="less">
