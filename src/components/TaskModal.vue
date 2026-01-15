@@ -393,9 +393,13 @@ watch(() => form.value.repeatRule, (newVal) => {
 
 const onSave = () => {
   if (!form.value.content.trim()) return;
+  const cleanedSubtasks = Array.isArray(form.value.subtasks)
+    ? form.value.subtasks.filter(s => s && typeof s.content === 'string' && s.content.trim() !== '')
+    : [];
   emit('save', {
     ...form.value,
-    priority: form.value.priority // Map back if needed, but 'medium' is fine if we update app logic
+    subtasks: cleanedSubtasks,
+    priority: form.value.priority
   });
   emit('update:visible', false);
 };

@@ -482,8 +482,12 @@ watch(() => form.value.repeatRule, (newVal) => {
 
 const onSave = () => {
   if (!form.value.content.trim()) return;
+  const cleanedSubtasks = Array.isArray(form.value.subtasks)
+    ? form.value.subtasks.filter(s => s && typeof s.content === 'string' && s.content.trim() !== '')
+    : [];
   emit('save', {
     ...form.value,
+    subtasks: cleanedSubtasks,
     priority: form.value.priority
   });
   emit('update:visible', false);

@@ -645,6 +645,7 @@ onMounted(() => {
          :todos="todos" 
          :categories="categories"
          categoryId="all"
+         :stickyMode="true"
          :sortState="{ field: 'default', order: 'asc' }"
          @update:todos="(val) => emit('update:todos', val)"
          @update-todo="(val) => emit('update-todo', val)"

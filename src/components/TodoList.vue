@@ -20,6 +20,10 @@ const props = defineProps({
   sortState: {
     type: Object,
     default: () => ({ field: 'default', order: 'asc' })
+  },
+  stickyMode: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -259,7 +263,67 @@ const displayGroups = computed(() => {
   // User request: "Plan module group by date", "All/Completed/Today group by category", "My List active + completed collapsed".
   // Let's assume grouping takes precedence, and sort applies WITHIN groups.
   
-  if (props.categoryId === 'urgent') {
+  if (props.stickyMode && props.categoryId === 'all') {
+    const todayItems = [];
+    const urgentItems = [];
+
+    const now = dayjs();
+
+    list.forEach(t => {
+      if (!t || !t.id) return;
+      if (!t.isCompleted && t.dueDate && dayjs(t.dueDate).isSameOrBefore(now, 'day')) {
+        todayItems.push(t);
+      }
+      if (!t.isCompleted && (t.priority === 'high' || t.priority === 'medium' || t.priority === 'low')) {
+        urgentItems.push(t);
+      }
+    });
+
+    if (todayItems.length > 0) {
+      groups.push({
+        id: 'sticky-today',
+        title: '今日待办',
+        items: todayItems,
+        isCollapsible: true,
+        count: todayItems.length
+      });
+    }
+
+    if (urgentItems.length > 0) {
+      groups.push({
+        id: 'sticky-urgent',
+        title: '紧急待办',
+        items: urgentItems,
+        isCollapsible: true,
+        count: urgentItems.length
+      });
+    }
+
+    const map = new Map();
+    list.forEach(t => {
+      if (!t || !t.id) return;
+      const catId = t.categoryId || 'default';
+      if (!map.has(catId)) {
+        map.set(catId, { id: catId, title: getCategoryName(catId), items: [] });
+      }
+      map.get(catId).items.push(t);
+    });
+
+    const sortedGroups = [];
+    if (map.has('default')) sortedGroups.push(map.get('default'));
+    props.categories.forEach(c => {
+      if (c.id !== 'default' && map.has(c.id)) {
+        sortedGroups.push(map.get(c.id));
+      }
+    });
+    map.forEach((val, key) => {
+      if (key !== 'default' && !props.categories.find(c => c.id === key)) {
+        sortedGroups.push(val);
+      }
+    });
+
+    groups.push(...sortedGroups);
+  } else if (props.categoryId === 'urgent') {
     // Priority Grouping
     const priorities = [
       { id: 'high', name: '高', color: '#ff4d4f' },
@@ -382,6 +446,7 @@ watch(() => props.todos.length, () => updateAxisBounds());
 
 // Logic for Priority View default collapsed state
 const urgentInitialized = ref(false);
+const stickyInitialized = ref(false);
 
 const checkAndInitUrgent = () => {
   if (props.categoryId === 'urgent' && !urgentInitialized.value && displayGroups.value.length > 0) {
@@ -396,15 +461,31 @@ const checkAndInitUrgent = () => {
   }
 };
 
+const checkAndInitSticky = () => {
+  if (props.stickyMode && props.categoryId === 'all' && !stickyInitialized.value && displayGroups.value.length > 0) {
+    const groups = displayGroups.value;
+    groups.forEach(g => {
+      collapsedGroups.value[g.id] = g.id !== 'sticky-today';
+    });
+    stickyInitialized.value = true;
+    updateAxisBounds();
+  }
+};
+
 watch(() => props.categoryId, (newId) => {
   if (newId === 'urgent') {
     urgentInitialized.value = false;
     nextTick(() => checkAndInitUrgent());
   }
+  if (props.stickyMode && newId === 'all') {
+    stickyInitialized.value = false;
+    nextTick(() => checkAndInitSticky());
+  }
 });
 
 watch(displayGroups, () => {
   checkAndInitUrgent();
+  checkAndInitSticky();
 });
 
 // ... existing methods ...
@@ -447,17 +528,17 @@ const onContextMenu = (e, todo) => {
 };
 
 // Subtask Hover Logic
-const hoveredTaskId = ref(null);
+const hoveredKey = ref(null);
 let hoverTimeout = null;
 
-const showSubtasks = (id) => {
+const showSubtasks = (groupId, id) => {
   if (hoverTimeout) clearTimeout(hoverTimeout);
-  hoveredTaskId.value = id;
+  hoveredKey.value = `${groupId}:${id}`;
 };
 
 const hideSubtasks = () => {
   hoverTimeout = setTimeout(() => {
-    hoveredTaskId.value = null;
+    hoveredKey.value = null;
   }, 200);
 };
 
@@ -558,7 +639,7 @@ const leave = (el) => {
                   class="todo-item" 
                   :class="{ 
                     completed: element.isCompleted,
-                    'is-hovering': hoveredTaskId === element.id,
+                    'is-hovering': hoveredKey === `${group.id}:${element.id}`,
                     'has-drag-handle': true
                   }"
                   @contextmenu="onContextMenu($event, element)"
@@ -591,7 +672,7 @@ const leave = (el) => {
                            v-if="element.subtasks && element.subtasks.length > 0" 
                            class="meta-tag subtask-tag" 
                            title="子任务"
-                           @mouseenter="showSubtasks(element.id)"
+                           @mouseenter="showSubtasks(group.id, element.id)"
                          >
                            <i class="ri-list-check"></i> {{ getSubtaskProgress(element) }}
                          </span>
@@ -621,7 +702,7 @@ const leave = (el) => {
                     @leave="leave"
                   >
                     <div 
-                      v-if="hoveredTaskId === element.id && element.subtasks && element.subtasks.length > 0"
+                      v-if="hoveredKey === `${group.id}:${element.id}` && element.subtasks && element.subtasks.length > 0"
                       class="subtask-expansion-wrapper"
                       @click.stop
                     >
@@ -659,7 +740,7 @@ const leave = (el) => {
                 class="todo-item" 
                 :class="{ 
                   completed: element.isCompleted,
-                  'is-hovering': hoveredTaskId === element.id,
+                  'is-hovering': hoveredKey === `${group.id}:${element.id}`,
                   'has-drag-handle': (!isCustomSort && group.id === 'active' && !['all', 'today', 'plan', 'urgent', 'completed'].includes(categoryId))
                 }"
                 @contextmenu="onContextMenu($event, element)"
@@ -687,14 +768,14 @@ const leave = (el) => {
                          <span v-if="element.description" class="meta-tag has-desc" title="有备注">
                            <i class="ri-sticky-note-line"></i>
                          </span>
-                     <span 
-                       v-if="element.subtasks && element.subtasks.length > 0" 
-                       class="meta-tag subtask-tag" 
-                       title="子任务"
-                       @mouseenter="showSubtasks(element.id)"
-                     >
-                       <i class="ri-list-check"></i> {{ getSubtaskProgress(element) }}
-                     </span>
+                 <span 
+                   v-if="element.subtasks && element.subtasks.length > 0" 
+                   class="meta-tag subtask-tag" 
+                   title="子任务"
+                   @mouseenter="showSubtasks(group.id, element.id)"
+                 >
+                   <i class="ri-list-check"></i> {{ getSubtaskProgress(element) }}
+                 </span>
                      <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
                        <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
                      </span>
@@ -725,7 +806,7 @@ const leave = (el) => {
                 @leave="leave"
               >
               <div 
-                  v-if="hoveredTaskId === element.id && element.subtasks && element.subtasks.length > 0"
+                  v-if="hoveredKey === `${group.id}:${element.id}` && element.subtasks && element.subtasks.length > 0"
                   class="subtask-expansion-wrapper"
                   @click.stop
                 >
@@ -790,18 +871,20 @@ const leave = (el) => {
     <div v-if="previewVisible" class="preview-overlay" @click.self="closePreview">
       <div class="preview-box">
         <div class="preview-header">
-          <span class="preview-title">{{ previewAttachment?.name }}</span>
+          <div class="preview-title-block">
+            <span class="preview-title">{{ previewAttachment?.name }}</span>
+            <select 
+              v-if="isTextAttachment(previewAttachment)" 
+              v-model="previewEncoding" 
+              @change="changeEncoding"
+              class="encoding-select"
+            >
+              <option v-for="opt in encodingOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
           <div class="preview-actions">
-              <select 
-                v-if="isTextAttachment(previewAttachment)" 
-                v-model="previewEncoding" 
-                @change="changeEncoding"
-                class="encoding-select"
-              >
-                <option v-for="opt in encodingOptions" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
               <button class="preview-download-btn" @click="downloadAttachment(previewAttachment)">
                 <i class="ri-download-2-line"></i> 下载
               </button>
@@ -1408,6 +1491,12 @@ const leave = (el) => {
   justify-content: space-between;
   align-items: center;
   background: var(--bg-color);
+}
+
+.preview-title-block {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .preview-title {
