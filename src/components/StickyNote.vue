@@ -39,12 +39,30 @@ const opacity = ref(1);
 const menuVisible = ref(false);
 const buildTag = typeof __JUSTTODO_BUILD_TAG__ === 'string' ? __JUSTTODO_BUILD_TAG__ : 'dev';
 const themeMode = ref('system');
-const isSystemDark = ref(false);
+const isSystemDark = ref(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
 const colorFollowSystem = ref(false);
-const presetColors = ['#FFFFFF', '#333333', '#FFF9C4', '#FFECB3', '#C8E6C9', '#BBDEFB', '#F8BBD0'];
+const presetColors = ['#f1f5f9', '#333333', '#FFF9C4', '#FFECB3', '#C8E6C9', '#BBDEFB', '#F8BBD0'];
 const noteColor = ref(presetColors[2]);
 const customColor = ref(presetColors[2]);
 const customColors = ref([]);
+const STICKY_SETTINGS_KEY = 'justtodo_sticky_settings';
+
+// System theme listener
+onMounted(() => {
+  const mediaQuery = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+  if (mediaQuery) {
+    const handler = (e) => {
+      isSystemDark.value = e.matches;
+    };
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', handler);
+    } else {
+      mediaQuery.addListener(handler);
+    }
+    // Cleanup on unmount handled by Vue automatically? No, manual cleanup needed usually but onUnmounted not imported
+    // We can import onUnmounted or just leave it as it's a main component
+  }
+});
 
 try {
   const saved = localStorage.getItem('justtodo_custom_colors');
@@ -53,10 +71,68 @@ try {
   }
 } catch (e) {}
 
+try {
+  const raw = localStorage.getItem(STICKY_SETTINGS_KEY);
+  if (raw) {
+    const data = JSON.parse(raw);
+    if (data && typeof data === 'object') {
+      if (typeof data.themeMode === 'string') {
+        themeMode.value = data.themeMode;
+      }
+      if (typeof data.colorFollowSystem === 'boolean') {
+        colorFollowSystem.value = data.colorFollowSystem;
+      }
+      if (typeof data.noteColor === 'string') {
+        noteColor.value = data.noteColor;
+        customColor.value = data.noteColor;
+      }
+      if (typeof data.opacity === 'number') {
+        opacity.value = data.opacity;
+      }
+      if (typeof data.isAlwaysOnTop === 'boolean') {
+        isAlwaysOnTop.value = data.isAlwaysOnTop;
+      }
+    }
+  }
+} catch (e) {}
+
+const persistStickySettings = () => {
+  try {
+    const data = {
+      themeMode: themeMode.value,
+      colorFollowSystem: colorFollowSystem.value,
+      noteColor: noteColor.value,
+      opacity: opacity.value,
+      isAlwaysOnTop: isAlwaysOnTop.value
+    };
+    localStorage.setItem(STICKY_SETTINGS_KEY, JSON.stringify(data));
+  } catch (e) {}
+};
+
 const effectiveTheme = computed(() => {
   if (themeMode.value === 'light') return 'light';
   if (themeMode.value === 'dark') return 'dark';
   return isSystemDark.value ? 'dark' : 'light';
+});
+
+// Sync global theme class for child components (TodoList, TaskModal, etc.)
+watch(effectiveTheme, (theme) => {
+  const root = document.documentElement;
+  root.classList.remove('theme-light', 'theme-dark');
+  if (theme === 'light') {
+    root.classList.add('theme-light');
+  } else if (theme === 'dark') {
+    root.classList.add('theme-dark');
+  }
+}, { immediate: true });
+
+// Persist theme mode
+watch(themeMode, (val) => {
+  persistStickySettings();
+});
+
+watch([noteColor, colorFollowSystem, opacity, isAlwaysOnTop], () => {
+  persistStickySettings();
 });
 
 const themeIndex = computed(() => {
@@ -66,6 +142,44 @@ const themeIndex = computed(() => {
 });
 
 const currentBackgroundColor = computed(() => noteColor.value);
+const currentAccentColor = computed(() => noteColor.value);
+const hexToRgb = (hex) => {
+  const h = hex.replace('#', '');
+  const bigint = parseInt(h.length === 3 ? h.split('').map(x => x + x).join('') : h, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return { r, g, b };
+};
+const clamp = (n) => Math.max(0, Math.min(255, n));
+const mix = (hex, target, amount) => {
+  const src = hexToRgb(hex);
+  const t = target === 'white' ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 };
+  const r = clamp(Math.round(src.r + (t.r - src.r) * amount));
+  const g = clamp(Math.round(src.g + (t.g - src.g) * amount));
+  const b = clamp(Math.round(src.b + (t.b - src.b) * amount));
+  const out = (r << 16) + (g << 8) + b;
+  return '#' + out.toString(16).padStart(6, '0');
+};
+const currentAxisColor = computed(() => {
+  const theme = effectiveTheme.value;
+  const base = noteColor.value;
+  return theme === 'dark' ? mix(base, 'white', 0.5) : mix(base, 'black', 0.35);
+});
+const currentCardColor = computed(() => {
+  const theme = effectiveTheme.value;
+  if (theme === 'light') {
+    return `rgba(255, 255, 255, 0.85)`;
+  }
+  return `rgba(0, 0, 0, 0.25)`;
+});
+const currentDotGlow = computed(() => {
+  const theme = effectiveTheme.value;
+  const mixed = theme === 'dark' ? mix(noteColor.value, 'white', 0.5) : mix(noteColor.value, 'black', 0.35);
+  const rgb = hexToRgb(mixed);
+  const alpha = theme === 'dark' ? 0.35 : 0.25;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+});
 const isCustomSelected = computed(() => !presetColors.includes(noteColor.value));
 
 watch(
@@ -208,6 +322,7 @@ const handleCustomColorChange = (e) => {
 const togglePin = () => {
   const next = !isAlwaysOnTop.value;
   isAlwaysOnTop.value = next;
+  persistStickySettings();
 
   const currentWin = getCurrentWindow();
   const currentBounds = currentWin && typeof currentWin.getBounds === 'function' ? currentWin.getBounds() : undefined;
@@ -401,7 +516,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div :class="['sticky-note', `theme-${effectiveTheme}`]" :style="{ opacity: opacity, '--sticky-bg': currentBackgroundColor }">
+  <div :class="['sticky-note', `theme-${effectiveTheme}`]" :style="{ opacity: opacity, '--sticky-bg': currentBackgroundColor, '--sticky-accent': currentAccentColor, '--sticky-axis': currentAxisColor, '--sticky-card-bg': currentCardColor, '--sticky-dot-glow': currentDotGlow }">
     <div class="sticky-header">
       <div class="drag-handle">
         <i class="ri-sticky-note-line"></i> 待办便签

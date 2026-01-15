@@ -1326,7 +1326,7 @@ textarea {
   padding: 6px 10px;
   border-radius: 10px;
   background: var(--primary-color);
-  color: #fff;
+  color: var(--bg-secondary);
 }
 
 .preview-close-btn {

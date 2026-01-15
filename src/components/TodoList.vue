@@ -856,7 +856,7 @@ const leave = (el) => {
     position: absolute;
     left: 6px;
     width: 2px;
-    border-left: 2px dashed var(--border-color);
+    border-left: 2px dashed var(--sticky-axis, var(--border-color));
     opacity: 0.6;
     z-index: 0;
   }
@@ -868,7 +868,7 @@ const leave = (el) => {
   z-index: 1;
 }
 
-.group-header {
+  .group-header {
   display: flex;
   align-items: center;
   margin-bottom: 12px;
@@ -893,7 +893,7 @@ const leave = (el) => {
     height: 8px;
     border-radius: 50%;
     background: var(--primary-color);
-    box-shadow: 0 0 0 4px var(--bg-color); /* Spacing from line */
+    box-shadow: none;
     border: none;
     z-index: 2;
     transition: all 0.2s;
@@ -905,7 +905,7 @@ const leave = (el) => {
       opacity: 0.8;
       &::before {
         transform: translateY(-50%) scale(1.2);
-        box-shadow: 0 0 0 6px var(--hover-bg);
+        box-shadow: 0 0 0 6px var(--sticky-dot-glow, var(--hover-bg));
       }
     }
   }
@@ -918,7 +918,7 @@ const leave = (el) => {
 
   .arrow-icon {
     font-size: 18px;
-    color: var(--primary-color); /* Blue color like reference */
+    color: var(--primary-color);
     transition: transform 0.2s;
     margin-left: 0;
     opacity: 0.8;
@@ -931,7 +931,7 @@ const leave = (el) => {
   .group-title {
     font-size: 15px;
     font-weight: 700;
-    color: var(--primary-color); /* Blue color like reference */
+    color: var(--primary-color);
   }
 
   .group-count {
@@ -949,7 +949,7 @@ const leave = (el) => {
   flex-direction: column;
   align-items: stretch;
   padding: 6px 8px;
-  background: var(--bg-secondary);
+  background: var(--sticky-card-bg, var(--bg-secondary));
   border-radius: 8px; /* Slightly less rounded, more like card */
   margin-bottom: 12px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);

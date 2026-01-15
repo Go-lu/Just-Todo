@@ -66,6 +66,7 @@ const showToast = (message, type = 'success') => {
 
 const themeMode = ref('system');
 const applyTheme = (mode) => {
+  if (isSticky.value) return;
   const root = document.documentElement;
   root.classList.remove('theme-light', 'theme-dark');
   if (mode === 'light') {
@@ -243,6 +244,7 @@ onMounted(() => {
       console.log('Plugin Enter', action);
       loadData();
     });
+    loadData();
   } else {
     loadData();
   }

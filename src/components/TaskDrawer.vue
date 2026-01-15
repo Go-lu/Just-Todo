@@ -986,7 +986,7 @@ const onOverlayClick = () => {
   &.checked {
     background: var(--primary-color);
     border-color: var(--primary-color);
-    color: #fff;
+    color: var(--bg-secondary);
   }
 }
 
