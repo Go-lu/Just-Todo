@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import TodoList from './TodoList.vue';
 
 const props = defineProps({
@@ -38,6 +38,43 @@ const isAlwaysOnTop = ref(pinParam !== '0');
 const opacity = ref(1);
 const menuVisible = ref(false);
 const buildTag = typeof __JUSTTODO_BUILD_TAG__ === 'string' ? __JUSTTODO_BUILD_TAG__ : 'dev';
+const themeMode = ref('system');
+const isSystemDark = ref(false);
+const colorFollowSystem = ref(false);
+const presetColors = ['#FFFFFF', '#333333', '#FFF9C4', '#FFECB3', '#C8E6C9', '#BBDEFB', '#F8BBD0'];
+const noteColor = ref(presetColors[2]);
+const customColor = ref(presetColors[2]);
+const customColors = ref([]);
+
+try {
+  const saved = localStorage.getItem('justtodo_custom_colors');
+  if (saved) {
+    customColors.value = JSON.parse(saved);
+  }
+} catch (e) {}
+
+const effectiveTheme = computed(() => {
+  if (themeMode.value === 'light') return 'light';
+  if (themeMode.value === 'dark') return 'dark';
+  return isSystemDark.value ? 'dark' : 'light';
+});
+
+const themeIndex = computed(() => {
+  if (themeMode.value === 'light') return 0;
+  if (themeMode.value === 'dark') return 1;
+  return 2;
+});
+
+const currentBackgroundColor = computed(() => noteColor.value);
+const isCustomSelected = computed(() => !presetColors.includes(noteColor.value));
+
+watch(
+  () => [effectiveTheme.value, colorFollowSystem.value],
+  ([theme, follow]) => {
+    if (!follow) return;
+    noteColor.value = theme === 'dark' ? presetColors[1] : presetColors[0];
+  }
+);
 
 const getCurrentWindow = () => {
   try {
@@ -117,6 +154,20 @@ onMounted(() => {
    if (isAlwaysOnTop.value) {
      setWindowTop(true);
    }
+   try {
+     if (window.matchMedia) {
+       const m = window.matchMedia('(prefers-color-scheme: dark)');
+       isSystemDark.value = !!m.matches;
+       const handler = (e) => {
+         isSystemDark.value = !!e.matches;
+       };
+       if (typeof m.addEventListener === 'function') {
+         m.addEventListener('change', handler);
+       } else if (typeof m.addListener === 'function') {
+         m.addListener(handler);
+       }
+     }
+   } catch (e) {}
 });
 
 const toggleMenu = () => {
@@ -125,6 +176,33 @@ const toggleMenu = () => {
 
 const handleClose = () => {
   window.close();
+};
+
+const setThemeMode = (mode) => {
+  themeMode.value = mode;
+};
+
+const setNoteColor = (color) => {
+  noteColor.value = color;
+};
+
+const toggleColorFollowSystem = () => {
+  colorFollowSystem.value = !colorFollowSystem.value;
+};
+
+const handleCustomColorChange = (e) => {
+  const value = e.target.value;
+  if (typeof value === 'string' && value) {
+    customColor.value = value;
+    noteColor.value = value;
+
+    if (!presetColors.includes(value) && !customColors.value.includes(value)) {
+      customColors.value.push(value);
+      try {
+        localStorage.setItem('justtodo_custom_colors', JSON.stringify(customColors.value));
+      } catch (e) {}
+    }
+  }
 };
 
 const togglePin = () => {
@@ -323,7 +401,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="sticky-note" :style="{ opacity: opacity }">
+  <div :class="['sticky-note', `theme-${effectiveTheme}`]" :style="{ opacity: opacity, '--sticky-bg': currentBackgroundColor }">
     <div class="sticky-header">
       <div class="drag-handle">
         <i class="ri-sticky-note-line"></i> 待办便签
@@ -345,6 +423,38 @@ onMounted(() => {
             <div class="toggle-knob"></div>
           </div>
         </div>
+        <div class="menu-item theme-item">
+          <span class="theme-label">主题</span>
+          <div class="theme-control">
+            <div class="theme-segment">
+              <div class="theme-segment-track" :style="{ transform: `translateX(${themeIndex * 100}%)` }"></div>
+              <button
+                type="button"
+                class="theme-segment-option"
+                :class="{ active: themeMode === 'light' }"
+                @click="setThemeMode('light')"
+              >
+                白天
+              </button>
+              <button
+                type="button"
+                class="theme-segment-option"
+                :class="{ active: themeMode === 'dark' }"
+                @click="setThemeMode('dark')"
+              >
+                夜间
+              </button>
+              <button
+                type="button"
+                class="theme-segment-option"
+                :class="{ active: themeMode === 'system' }"
+                @click="setThemeMode('system')"
+              >
+                系统
+              </button>
+            </div>
+          </div>
+        </div>
         <div class="menu-item opacity-item">
           <span>透明度</span>
           <div class="slider-wrapper">
@@ -360,6 +470,57 @@ onMounted(() => {
             >
           </div>
           <span class="value-text">{{ Math.round(opacity * 100) }}%</span>
+        </div>
+        <div class="menu-item color-item">
+          <span>颜色</span>
+          <div class="color-follow">
+            <span class="color-follow-label">系统</span>
+            <div class="toggle-switch" :class="{ active: colorFollowSystem }" @click="toggleColorFollowSystem">
+              <div class="toggle-knob"></div>
+            </div>
+          </div>
+          <div class="color-palette" :class="{ disabled: colorFollowSystem }">
+            <div class="color-section">
+              <div class="color-section-header">预设</div>
+              <div class="color-section-body">
+                <button
+                  v-for="color in presetColors"
+                  :key="color"
+                  type="button"
+                  class="color-swatch"
+                  :class="{ active: noteColor === color && !colorFollowSystem }"
+                  :style="{ backgroundColor: color }"
+                  @click="!colorFollowSystem && setNoteColor(color)"
+                ></button>
+              </div>
+            </div>
+            <div class="color-section">
+              <div class="color-section-header">自定义</div>
+              <div class="color-section-body">
+                <button
+                  v-for="color in customColors"
+                  :key="color"
+                  type="button"
+                  class="color-swatch"
+                  :class="{ active: noteColor === color && !colorFollowSystem }"
+                  :style="{ backgroundColor: color }"
+                  @click="!colorFollowSystem && setNoteColor(color)"
+                ></button>
+                <label
+                  class="color-swatch custom-swatch"
+                  title="添加自定义颜色"
+                >
+                  <span class="custom-plus">+</span>
+                  <input
+                    class="color-input"
+                    type="color"
+                    :value="customColor"
+                    @change="!colorFollowSystem && handleCustomColorChange($event)"
+                  >
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -384,12 +545,22 @@ onMounted(() => {
 .sticky-note {
   width: 100vw;
   height: 100vh;
-  background-color: #fff; /* Changed to white for better TodoList contrast */
+  background-color: var(--sticky-bg, #fff);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   border: 1px solid #e0e0e0;
+}
+
+.sticky-note.theme-light {
+  color: #333;
+}
+
+.sticky-note.theme-dark {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  border-color: #333;
+  color: #f5f5f5;
 }
 
 .sticky-header {
@@ -421,6 +592,24 @@ onMounted(() => {
     gap: 4px;
     -webkit-app-region: no-drag;
   }
+}
+
+.sticky-note.theme-dark .sticky-header {
+  background-color: #2a2a2a;
+  border-bottom-color: #333;
+}
+
+.sticky-note.theme-dark .sticky-header .drag-handle {
+  color: #ccc;
+}
+
+.sticky-note.theme-dark .sticky-header .window-controls .icon-btn {
+  color: #ccc;
+}
+
+.sticky-note.theme-dark .sticky-header .window-controls .icon-btn:hover {
+  background-color: rgba(255,255,255,0.08);
+  color: #fff;
 }
 
 .icon-btn {
@@ -502,6 +691,185 @@ onMounted(() => {
       font-feature-settings: "tnum";
     }
   }
+
+  .theme-item {
+    /* flex-direction: column; removed to keep single line */
+    /* align-items: flex-start; removed */
+    gap: 8px;
+  }
+  
+  .theme-label {
+    flex-shrink: 0;
+  }
+
+  .theme-control {
+    flex: 1;
+    min-width: 0; /* Allow shrinking */
+  }
+
+  .theme-segment {
+    position: relative;
+    display: flex;
+    width: 100%;
+    height: 24px;
+    border-radius: 6px;
+    background-color: rgba(0,0,0,0.06); /* Dynamic bg based on context */
+    overflow: hidden;
+  }
+
+  .theme-segment-track {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: 33.3333%;
+    border-radius: 4px;
+    background-color: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    transform: translateX(0%);
+    transition: transform 0.2s ease;
+  }
+
+  .theme-segment-option {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-size: 11px; /* Smaller font */
+    color: #666;
+    cursor: pointer;
+    z-index: 1;
+    padding: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .theme-segment-option.active {
+    color: #333;
+    font-weight: 500;
+  }
+
+  .color-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .color-follow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .color-follow-label {
+    font-size: 12px;
+    color: #666;
+  }
+
+  .color-palette {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .color-palette.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .color-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+  }
+
+  .color-section-header {
+    font-size: 12px;
+    color: #666;
+  }
+
+  .color-section-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .color-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid rgba(0,0,0,0.1);
+    padding: 0;
+    cursor: pointer;
+    background-clip: padding-box;
+    box-sizing: border-box;
+  }
+
+  .color-swatch.active {
+    border-color: #1890ff;
+    box-shadow: 0 0 0 1px #1890ff;
+  }
+
+  .custom-swatch {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    position: relative;
+    border: 1px dashed rgba(0,0,0,0.3);
+    border-radius: 4px;
+    width: 18px;
+    height: 18px;
+    overflow: hidden;
+    background-color: transparent;
+  }
+
+  .custom-plus {
+    font-size: 14px;
+    line-height: 1;
+    color: #999;
+    pointer-events: none;
+  }
+
+  .color-input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+}
+
+.sticky-note.theme-dark .menu-popup {
+  background: #2a2a2a;
+  border-color: #444;
+}
+
+.sticky-note.theme-dark .menu-popup .menu-item {
+  color: #f5f5f5;
+}
+
+/* Theme segment dark mode styles */
+.sticky-note.theme-dark .menu-popup .theme-segment {
+  background-color: rgba(255,255,255,0.1);
+}
+
+.sticky-note.theme-dark .menu-popup .theme-segment-track {
+  background-color: #444;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+.sticky-note.theme-dark .menu-popup .theme-segment-option {
+  color: #aaa;
+}
+
+.sticky-note.theme-dark .menu-popup .theme-segment-option.active {
+  color: #fff;
+}
+
+.sticky-note.theme-dark .menu-popup .color-swatch {
+  border-color: rgba(255,255,255,0.2);
 }
 
 .toggle-switch {
