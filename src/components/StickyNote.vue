@@ -131,12 +131,6 @@ const togglePin = () => {
   const next = !isAlwaysOnTop.value;
   isAlwaysOnTop.value = next;
 
-  try {
-    if (window.utools && typeof window.utools.showNotification === 'function') {
-      window.utools.showNotification(`JustTodo build ${buildTag} pin=${next ? '1' : '0'}`);
-    }
-  } catch (e) {}
-
   const currentWin = getCurrentWindow();
   const currentBounds = currentWin && typeof currentWin.getBounds === 'function' ? currentWin.getBounds() : undefined;
 
@@ -221,11 +215,6 @@ const togglePin = () => {
                 if (newWin && typeof newWin.focus === 'function') newWin.focus();
               } catch (e) {}
               try {
-                if (window.utools && typeof window.utools.showNotification === 'function') {
-                  window.utools.showNotification(`JustTodo build ${buildTag} pin:recreate`);
-                }
-              } catch (e) {}
-              try {
                 setTimeout(() => {
                   try {
                     if (currentWin && typeof currentWin.destroy === 'function') currentWin.destroy();
@@ -289,11 +278,6 @@ const togglePin = () => {
           }
         } catch (e) {}
         try {
-          if (window.utools && typeof window.utools.showNotification === 'function') {
-            window.utools.showNotification(`JustTodo build ${buildTag} unpin:recreate`);
-          }
-        } catch (e) {}
-        try {
           setTimeout(() => {
             try {
               if (currentWin && typeof currentWin.destroy === 'function') currentWin.destroy();
@@ -312,11 +296,6 @@ const togglePin = () => {
   try {
     const ok = !!(window.services && window.services.recreateStickyWindow && window.services.recreateStickyWindow(false, currentBounds));
     if (ok) {
-      try {
-        if (window.utools && typeof window.utools.showNotification === 'function') {
-          window.utools.showNotification(`JustTodo build ${buildTag} unpin:services`);
-        }
-      } catch (e) {}
       try {
         setTimeout(() => {
           try { window.close() } catch (e) {}
