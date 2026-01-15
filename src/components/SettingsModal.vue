@@ -305,7 +305,7 @@ const testWebhook = () => emit('test-webhook', form.webhook);
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
-  max-height: 85vh;
+  max-height: calc(100vh - 24px);
   animation: modal-in 0.3s ease;
 }
 
@@ -342,7 +342,7 @@ const testWebhook = () => emit('test-webhook', form.webhook);
   flex: 1;
   display: flex;
   overflow: hidden;
-  min-height: 400px;
+  min-height: 0;
 }
 
 .tabs {
@@ -381,6 +381,26 @@ const testWebhook = () => emit('test-webhook', form.webhook);
   flex: 1;
   padding: 24px;
   overflow-y: auto;
+  min-height: 0;
+}
+
+@media (max-height: 560px) {
+  .modal-container {
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+  }
+
+  .modal-header {
+    padding: 12px 16px;
+  }
+
+  .tab-content {
+    padding: 16px;
+  }
+
+  .modal-footer {
+    padding: 12px 16px;
+  }
 }
 
 .settings-panel {
