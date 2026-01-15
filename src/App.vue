@@ -1238,7 +1238,7 @@ const exportMarkdown = () => {
     :todos="todos"
     :categories="categories"
     @update:todos="handleTodosUpdate"
-    @open-add-task="openTaskModal({ categoryId: 'default' })"
+    @open-add-task="(val) => openTaskModal(val || { categoryId: 'default' })"
     @update-todo="updateTodo"
     @context-menu="showContextMenu"
     @item-click="openTaskDrawer"

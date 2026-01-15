@@ -513,6 +513,15 @@ const onWheel = (e) => {
   }
 };
 
+const isStickyCategoryGroup = (groupId) => {
+  return !!(props.stickyMode && props.categoryId === 'all' && groupId && groupId !== 'sticky-today' && groupId !== 'sticky-urgent');
+};
+
+const openAddForGroup = (groupId) => {
+  if (!groupId) return;
+  emit('open-add-task', { categoryId: groupId });
+};
+
 // ... existing methods ...
 const activateInput = () => {
   if (props.categoryId === 'completed') return;
@@ -628,7 +637,11 @@ const leave = (el) => {
         <div 
           v-if="!group.noHeader" 
           class="group-header" 
-          :class="{ 'clickable': group.isCollapsible || categoryId === 'plan' || ['all', 'today', 'completed'].includes(categoryId) }"
+          :class="{ 
+            'clickable': group.isCollapsible || categoryId === 'plan' || ['all', 'today', 'completed'].includes(categoryId),
+            'sticky-today': props.stickyMode && group.id === 'sticky-today',
+            'sticky-urgent': props.stickyMode && group.id === 'sticky-urgent',
+          }"
           @click="(group.isCollapsible || categoryId === 'plan' || ['all', 'today', 'completed'].includes(categoryId)) ? toggleGroup(group.id) : null"
         >
            <div class="header-left">
@@ -639,6 +652,11 @@ const leave = (el) => {
              ></i>
              <span class="group-title" :style="{ color: group.color }">{{ group.title }}</span>
              <span class="group-count">{{ group.items.length }}</span>
+           </div>
+           <div v-if="isStickyCategoryGroup(group.id)" class="header-right">
+             <button class="group-add-btn" title="新建待办" @click.stop="openAddForGroup(group.id)">
+               <i class="ri-add-line"></i>
+             </button>
            </div>
         </div>
 
@@ -869,6 +887,7 @@ const leave = (el) => {
              </TransitionGroup>
            </div>
         </div>
+        <div v-if="props.stickyMode && props.categoryId === 'all' && group.id === 'sticky-urgent'" class="sticky-group-separator"></div>
       </div>
       
       <div v-if="displayGroups.length === 0" class="empty-state">
@@ -878,7 +897,7 @@ const leave = (el) => {
       </div>
     </div>
 
-    <div class="fab-btn" @click="activateInput" v-if="categoryId !== 'completed'" title="新建待办">
+    <div class="fab-btn" @click="activateInput" v-if="!props.stickyMode && categoryId !== 'completed'" title="新建待办">
       <i class="ri-add-line"></i>
     </div>
 
@@ -994,6 +1013,7 @@ const leave = (el) => {
   .group-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: 12px;
   padding: 6px 0;
   user-select: none;
@@ -1022,6 +1042,18 @@ const leave = (el) => {
     transition: all 0.2s;
   }
 
+  &.sticky-today {
+    &::before {
+      background: #52c41a;
+    }
+  }
+
+  &.sticky-urgent {
+    &::before {
+      background: #ff4d4f;
+    }
+  }
+
   &.clickable {
     cursor: pointer;
     &:hover {
@@ -1037,6 +1069,32 @@ const leave = (el) => {
     display: flex;
     align-items: center;
     gap: 12px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+  }
+
+  .group-add-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--secondary-text);
+    cursor: pointer;
+    transition: all 0.2s;
+    padding: 0;
+
+    &:hover {
+      background: var(--hover-bg);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
   }
 
   .arrow-icon {
@@ -1064,6 +1122,12 @@ const leave = (el) => {
 
 .group-list {
   padding-left: 8px; /* Indent items to align with title text */
+}
+
+.sticky-group-separator {
+  margin: 14px 8px 18px 8px;
+  border-top: 1px dashed var(--border-color);
+  opacity: 0.6;
 }
 
 .todo-item {

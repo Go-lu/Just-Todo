@@ -649,7 +649,7 @@ onMounted(() => {
          :sortState="{ field: 'default', order: 'asc' }"
          @update:todos="(val) => emit('update:todos', val)"
          @update-todo="(val) => emit('update-todo', val)"
-         @open-add-task="emit('open-add-task')"
+         @open-add-task="(val) => emit('open-add-task', val)"
          @context-menu="(val) => emit('context-menu', val)"
          @item-click="(val) => emit('item-click', val)"
        />
