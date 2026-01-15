@@ -47,6 +47,7 @@ const settingsVisible = ref(false);
 const notificationSettings = ref({});
 const notifiedTasks = ref(new Set());
 let notificationTimer = null;
+let stickyWindowInstance = null;
 
 const toast = ref({
   visible: false,
@@ -724,7 +725,7 @@ const handleSaveSettings = (newSettings) => {
 const testDesktop = (config) => {
   const title = '测试通知';
   const body = '这是一条测试通知';
-  const options = { 
+  const options = {
     body, 
     requireInteraction: true 
   };
@@ -1093,31 +1094,98 @@ const handleMenuAction = (action, payload) => {
 
 const isUtools = typeof window !== 'undefined' && !!window.utools;
 
+const createStickyWindow = (pin, bounds) => {
+  if (!window.utools) return null;
+
+  const width = bounds?.width ?? 320;
+  const height = bounds?.height ?? 500;
+
+  const options = {
+    width,
+    height,
+    x: typeof bounds?.x === 'number' ? bounds.x : undefined,
+    y: typeof bounds?.y === 'number' ? bounds.y : undefined,
+    title: '待办便签',
+    useContentSize: true,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    resizable: true,
+    minimizable: false,
+    maximizable: false,
+    alwaysOnTop: false,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: 'preload/services.js',
+      nodeIntegration: true,
+      contextIsolation: false,
+      enableRemoteModule: true,
+      backgroundThrottling: false
+    }
+  };
+
+  const url = `sticky.html?pin=${pin ? '1' : '0'}&nonce=${Date.now().toString(36)}`;
+  let win = null;
+  win = window.utools.createBrowserWindow(url, options, () => {
+    if (!win) return;
+    try {
+      win.show();
+    } catch (e) {}
+    if (pin) {
+      try {
+        win.setAlwaysOnTop(true);
+      } catch (e) {}
+    }
+  });
+  return win;
+};
+
 const togglePin = () => {
-  if (isSticky.value) return;
+  if (stickyWindowInstance) {
+    try {
+      const isCurrentlyOnTop = typeof stickyWindowInstance.isAlwaysOnTop === 'function'
+        ? stickyWindowInstance.isAlwaysOnTop()
+        : true;
+      const nextState = !isCurrentlyOnTop;
+
+      if (nextState) {
+        stickyWindowInstance.setAlwaysOnTop(true, 'screen-saver');
+        if (window.utools) window.utools.showNotification('便签已置顶');
+        return;
+      } else {
+        try {
+          stickyWindowInstance.setAlwaysOnTop(false);
+        } catch (e) {}
+        try {
+          setTimeout(() => {
+            try {
+              stickyWindowInstance && stickyWindowInstance.setAlwaysOnTop(false);
+            } catch (e) {}
+            try {
+              if (stickyWindowInstance && typeof stickyWindowInstance.isAlwaysOnTop === 'function' && stickyWindowInstance.isAlwaysOnTop()) {
+                try { stickyWindowInstance.setAlwaysOnTop(false, 'screen-saver'); } catch (e2) {}
+                try { stickyWindowInstance.setAlwaysOnTop(false, 'floating'); } catch (e2) {}
+                try { stickyWindowInstance.setAlwaysOnTop(false, 'normal'); } catch (e2) {}
+                try { stickyWindowInstance.setAlwaysOnTop(true, 'normal'); } catch (e2) {}
+                try { stickyWindowInstance.setAlwaysOnTop(false); } catch (e2) {}
+              }
+            } catch (e) {}
+          }, 0);
+        } catch (e) {}
+        try {
+          if (typeof stickyWindowInstance.focus === 'function') stickyWindowInstance.focus();
+        } catch (e) {}
+        if (window.utools) window.utools.showNotification('已取消置顶');
+        return;
+      }
+    } catch (e) {
+      console.error('Failed to toggle pin for existing window:', e);
+      stickyWindowInstance = null;
+    }
+  }
 
   if (window.utools) {
-     window.utools.createBrowserWindow('sticky.html', {
-        width: 320,
-        height: 500,
-        title: '待办便签',
-        useContentSize: true,
-        frame: false,
-        transparent: true,
-        backgroundColor: '#00000000',
-        resizable: true,
-        minimizable: false,
-        maximizable: false,
-        alwaysOnTop: true,
-        skipTaskbar: true,
-        webPreferences: {
-            preload: 'preload/services.js',
-            nodeIntegration: true,
-            contextIsolation: false,
-            enableRemoteModule: true,
-            backgroundThrottling: false
-        }
-     });
+     stickyWindowInstance = createStickyWindow(true);
      window.utools.outPlugin();
   }
 };

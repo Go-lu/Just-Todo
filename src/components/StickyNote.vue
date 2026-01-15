@@ -19,58 +19,104 @@ const emit = defineEmits([
   'update-todo', 
   'context-menu', 
   'item-click',
-  'close' // For closing the window
+  'close'
 ]);
 
-const isAlwaysOnTop = ref(true);
+const getPinParam = () => {
+  const searchParams = new URLSearchParams(window.location.search || '');
+  const direct = searchParams.get('pin');
+  if (direct !== null) return direct;
+  const hash = window.location.hash || '';
+  const idx = hash.indexOf('?');
+  if (idx === -1) return null;
+  const hashParams = new URLSearchParams(hash.slice(idx + 1));
+  return hashParams.get('pin');
+};
+
+const pinParam = getPinParam();
+const isAlwaysOnTop = ref(pinParam !== '0');
 const opacity = ref(1);
 const menuVisible = ref(false);
+const buildTag = typeof __JUSTTODO_BUILD_TAG__ === 'string' ? __JUSTTODO_BUILD_TAG__ : 'dev';
 
-// Helper functions for window control
+const getCurrentWindow = () => {
+  try {
+    if (window.require) {
+      const { remote } = window.require('electron');
+      const win = remote?.getCurrentWindow?.();
+      if (win) return win;
+    }
+  } catch (e) {}
+
+  try {
+    if (window.utools && window.utools.getCurrentBrowserWindow) {
+      const win = window.utools.getCurrentBrowserWindow();
+      if (win) return win;
+    }
+  } catch (e) {}
+
+  return null;
+};
+
 const setWindowOpacity = (val) => {
-  // 1. Try preload service
   if (window.services && window.services.setOpacity) {
     window.services.setOpacity(val);
     return;
   }
-  // 2. Try direct electron access
   try {
-    if (window.require) {
-        const { remote } = window.require('electron');
-        if (remote) remote.getCurrentWindow().setOpacity(val);
-    }
+    const win = getCurrentWindow();
+    if (win && typeof win.setOpacity === 'function') win.setOpacity(val);
   } catch (e) {
     console.error('Failed to set opacity', e);
   }
 };
 
 const setWindowTop = (flag) => {
-  // 1. Try preload service
+  let handled = false;
   if (window.services && window.services.setAlwaysOnTop) {
-    window.services.setAlwaysOnTop(flag);
-    return;
+    try {
+      const ok = window.services.setAlwaysOnTop(flag);
+      handled = !!ok;
+    } catch (e) {}
   }
-  // 2. Try direct electron access
+
+  const win = getCurrentWindow();
+
+  if (!win) {
+    return handled;
+  }
+
   try {
-     if (window.require) {
-         const { remote } = window.require('electron');
-         if (remote) remote.getCurrentWindow().setAlwaysOnTop(flag);
-     }
+    if (flag) {
+      try {
+        win.setAlwaysOnTop(true, 'screen-saver');
+      } catch (e) {}
+      win.setAlwaysOnTop(true);
+    } else {
+      try {
+        win.setAlwaysOnTop(false);
+      } catch (e) {}
+      try {
+        setTimeout(() => {
+          try {
+            win.setAlwaysOnTop(false);
+          } catch (e) {}
+        }, 0);
+      } catch (e) {}
+    }
+    return true;
   } catch (e) {
-      console.error('Failed to set always on top', e);
-      // 3. Fallback to uTools API (mostly for main window, but worth a try)
-      if (window.utools && window.utools.setAlwaysOnTop) {
-          window.utools.setAlwaysOnTop(flag);
-      }
+    console.error('Failed to set always on top via instance:', e);
+    return handled;
   }
 };
 
-// Initialize window state if possible
 onMounted(() => {
    document.documentElement.style.backgroundColor = 'transparent';
    document.body.style.backgroundColor = 'transparent';
-   // setWindowOpacity(opacity.value);
-   setWindowTop(isAlwaysOnTop.value);
+   if (isAlwaysOnTop.value) {
+     setWindowTop(true);
+   }
 });
 
 const toggleMenu = () => {
@@ -78,21 +124,213 @@ const toggleMenu = () => {
 };
 
 const handleClose = () => {
-  window.close(); // Close this window
+  window.close();
 };
 
 const togglePin = () => {
-  isAlwaysOnTop.value = !isAlwaysOnTop.value;
-  setWindowTop(isAlwaysOnTop.value);
+  const next = !isAlwaysOnTop.value;
+  isAlwaysOnTop.value = next;
+
+  try {
+    if (window.utools && typeof window.utools.showNotification === 'function') {
+      window.utools.showNotification(`JustTodo build ${buildTag} pin=${next ? '1' : '0'}`);
+    }
+  } catch (e) {}
+
+  const currentWin = getCurrentWindow();
+  const currentBounds = currentWin && typeof currentWin.getBounds === 'function' ? currentWin.getBounds() : undefined;
+
+  try {
+    const hash = window.location.hash || '';
+    const idx = hash.indexOf('?');
+    if (idx !== -1) {
+      const base = hash.slice(0, idx);
+      const params = new URLSearchParams(hash.slice(idx + 1));
+      params.set('pin', next ? '1' : '0');
+      const newHash = `${base}?${params.toString()}`;
+      window.history.replaceState({}, '', window.location.pathname + window.location.search + newHash);
+    } else {
+      const url = new URL(window.location.href);
+      url.searchParams.set('pin', next ? '1' : '0');
+      window.history.replaceState({}, '', url.toString());
+    }
+  } catch (e) {}
+
+  if (next) {
+    setWindowTop(true);
+    try {
+      setTimeout(() => {
+        try {
+          const win = getCurrentWindow();
+          const canCheck = win && (typeof win.isAlwaysOnTop === 'function' || typeof win.getAlwaysOnTopLevel === 'function');
+          let shouldRecreate = !canCheck;
+          if (win && canCheck) {
+            const level = typeof win.getAlwaysOnTopLevel === 'function' ? win.getAlwaysOnTopLevel() : '';
+            const stillNotOnTop = !(typeof win.isAlwaysOnTop === 'function' && win.isAlwaysOnTop()) && (!level || level === 'normal');
+            shouldRecreate = !!stillNotOnTop;
+          }
+
+          if (!shouldRecreate) return;
+
+          if (window.utools && typeof window.utools.createBrowserWindow === 'function') {
+            const width = currentBounds?.width ?? 320;
+            const height = currentBounds?.height ?? 500;
+
+            const options = {
+              width,
+              height,
+              x: typeof currentBounds?.x === 'number' ? currentBounds.x : undefined,
+              y: typeof currentBounds?.y === 'number' ? currentBounds.y : undefined,
+              title: '待办便签',
+              useContentSize: true,
+              frame: false,
+              transparent: true,
+              backgroundColor: '#00000000',
+              resizable: true,
+              minimizable: false,
+              maximizable: false,
+              alwaysOnTop: false,
+              skipTaskbar: true,
+              show: false,
+              webPreferences: {
+                preload: 'preload/services.js',
+                nodeIntegration: true,
+                contextIsolation: false,
+                enableRemoteModule: true,
+                backgroundThrottling: false
+              }
+            };
+
+            const url = `sticky.html?pin=1&nonce=${Date.now().toString(36)}`;
+            let newWin = null;
+            newWin = window.utools.createBrowserWindow(url, options, () => {
+              try {
+                if (newWin && typeof newWin.show === 'function') newWin.show();
+              } catch (e) {}
+              try {
+                if (newWin && typeof newWin.setAlwaysOnTop === 'function') {
+                  try { newWin.setAlwaysOnTop(true, 'floating'); } catch (e) {}
+                  try { newWin.setAlwaysOnTop(true, 'screen-saver'); } catch (e) {}
+                  try { newWin.setAlwaysOnTop(true); } catch (e) {}
+                }
+              } catch (e) {}
+              try {
+                if (newWin && typeof newWin.moveTop === 'function') newWin.moveTop();
+              } catch (e) {}
+              try {
+                if (newWin && typeof newWin.focus === 'function') newWin.focus();
+              } catch (e) {}
+              try {
+                if (window.utools && typeof window.utools.showNotification === 'function') {
+                  window.utools.showNotification(`JustTodo build ${buildTag} pin:recreate`);
+                }
+              } catch (e) {}
+              try {
+                setTimeout(() => {
+                  try {
+                    if (currentWin && typeof currentWin.destroy === 'function') currentWin.destroy();
+                    else if (currentWin && typeof currentWin.close === 'function') currentWin.close();
+                    else window.close();
+                  } catch (e) {
+                    try { window.close() } catch (e2) {}
+                  }
+                }, 0);
+              } catch (e) {}
+            });
+          }
+        } catch (e) {}
+      }, 120);
+    } catch (e) {}
+    return;
+  }
+
+  setWindowTop(false);
+
+  try {
+    if (window.utools && typeof window.utools.createBrowserWindow === 'function') {
+      const width = currentBounds?.width ?? 320;
+      const height = currentBounds?.height ?? 500;
+
+      const options = {
+        width,
+        height,
+        x: typeof currentBounds?.x === 'number' ? currentBounds.x : undefined,
+        y: typeof currentBounds?.y === 'number' ? currentBounds.y : undefined,
+        title: '待办便签',
+        useContentSize: true,
+        frame: false,
+        transparent: true,
+        backgroundColor: '#00000000',
+        resizable: true,
+        minimizable: false,
+        maximizable: false,
+        alwaysOnTop: false,
+        skipTaskbar: true,
+        show: false,
+        webPreferences: {
+          preload: 'preload/services.js',
+          nodeIntegration: true,
+          contextIsolation: false,
+          enableRemoteModule: true,
+          backgroundThrottling: false
+        }
+      };
+
+      const url = `sticky.html?pin=0&nonce=${Date.now().toString(36)}`;
+      let newWin = null;
+      newWin = window.utools.createBrowserWindow(url, options, () => {
+        try {
+          if (newWin && typeof newWin.show === 'function') newWin.show();
+        } catch (e) {}
+        try {
+          if (newWin && typeof newWin.setAlwaysOnTop === 'function') {
+            try { newWin.setAlwaysOnTop(false); } catch (e) {}
+            try { newWin.setAlwaysOnTop(false, 'normal'); } catch (e) {}
+          }
+        } catch (e) {}
+        try {
+          if (window.utools && typeof window.utools.showNotification === 'function') {
+            window.utools.showNotification(`JustTodo build ${buildTag} unpin:recreate`);
+          }
+        } catch (e) {}
+        try {
+          setTimeout(() => {
+            try {
+              if (currentWin && typeof currentWin.destroy === 'function') currentWin.destroy();
+              else if (currentWin && typeof currentWin.close === 'function') currentWin.close();
+              else window.close();
+            } catch (e) {
+              try { window.close() } catch (e2) {}
+            }
+          }, 0);
+        } catch (e) {}
+      });
+      return;
+    }
+  } catch (e) {}
+
+  try {
+    const ok = !!(window.services && window.services.recreateStickyWindow && window.services.recreateStickyWindow(false, currentBounds));
+    if (ok) {
+      try {
+        if (window.utools && typeof window.utools.showNotification === 'function') {
+          window.utools.showNotification(`JustTodo build ${buildTag} unpin:services`);
+        }
+      } catch (e) {}
+      try {
+        setTimeout(() => {
+          try { window.close() } catch (e) {}
+        }, 0);
+      } catch (e) {}
+    }
+  } catch (e) {}
 };
 
 const updateOpacity = (e) => {
   const val = parseFloat(e.target.value);
   opacity.value = val;
-  // setWindowOpacity(val);
 };
 
-// Close menu when clicking outside
 const closeMenu = (e) => {
     if (!e.target.closest('.menu-container') && !e.target.closest('.menu-btn')) {
         menuVisible.value = false;
@@ -257,6 +495,7 @@ onMounted(() => {
   z-index: 1000;
   border: 1px solid #eee;
   animation: fadeIn 0.2s ease;
+  -webkit-app-region: no-drag;
   
   .menu-item {
     padding: 8px;
@@ -265,6 +504,7 @@ onMounted(() => {
     justify-content: space-between;
     font-size: 13px;
     color: #333;
+    -webkit-app-region: no-drag;
     
     &.opacity-item {
       justify-content: flex-start;
@@ -293,6 +533,7 @@ onMounted(() => {
   position: relative;
   cursor: pointer;
   transition: background 0.3s;
+  -webkit-app-region: no-drag;
   
   .toggle-knob {
     width: 16px;

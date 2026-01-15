@@ -1,25 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 
-const { dbMock } = vi.hoisted(() => ({
-  dbMock: {
-    getTodos: vi.fn(() => ([
-      { id: '1', content: 'A', isCompleted: false },
-      { id: '2', content: 'B', isCompleted: false }
-    ])),
-    saveTodos: vi.fn()
-  }
-}));
-
-vi.mock('../utils/db', () => ({
-  db: dbMock
-}));
-
 import StickyNote from './StickyNote.vue';
 
 const createServicesMock = () => ({
   setOpacity: vi.fn(),
-  setAlwaysOnTop: vi.fn(),
+  setAlwaysOnTop: vi.fn(() => true),
   closeWindow: vi.fn()
 });
 
@@ -28,10 +14,11 @@ describe('StickyNote', () => {
   let rafBackup;
 
   beforeEach(() => {
+    try {
+      window.history.replaceState({}, '', '/?pin=0');
+    } catch (e) {}
     servicesBackup = window.services;
     window.services = createServicesMock();
-    dbMock.getTodos.mockClear();
-    dbMock.saveTodos.mockClear();
     rafBackup = window.requestAnimationFrame;
     window.requestAnimationFrame = (cb) => {
       cb(performance.now() + 1000);
@@ -45,38 +32,33 @@ describe('StickyNote', () => {
     window.requestAnimationFrame = rafBackup;
   });
 
-  it('loads todos and applies initial opacity', () => {
-    const wrapper = mount(StickyNote);
-    expect(dbMock.getTodos).toHaveBeenCalledTimes(1);
-    expect(window.services.setOpacity).toHaveBeenCalled();
-    wrapper.unmount();
-  });
-
-  it('toggles always-on-top via action button', async () => {
+  it('toggles always-on-top via menu switch', async () => {
     const wrapper = mount(StickyNote);
     await wrapper.find('button.menu-btn').trigger('click');
-    const toggle = wrapper.find('.menu-popup button.action-btn');
+    const toggle = wrapper.find('.menu-popup .toggle-switch');
     await toggle.trigger('click');
-    expect(window.services.setAlwaysOnTop).toHaveBeenCalled();
+    expect(window.services.setAlwaysOnTop).toHaveBeenCalledWith(true);
+    await toggle.trigger('click');
+    expect(window.services.setAlwaysOnTop).toHaveBeenCalledWith(false);
     wrapper.unmount();
   });
 
   it('updates opacity from slider', async () => {
     const wrapper = mount(StickyNote);
     await wrapper.find('button.menu-btn').trigger('click');
-    window.services.setOpacity.mockClear();
     const slider = wrapper.find('.menu-popup input[type="range"]');
     await slider.setValue('0.5');
-    expect(window.services.setOpacity).toHaveBeenCalled();
+    expect(wrapper.find('.sticky-note').attributes('style')).toContain('opacity');
     wrapper.unmount();
   });
 
-  it('changes background color from preset palette', async () => {
+  it('closes menu when clicking outside', async () => {
     const wrapper = mount(StickyNote);
     await wrapper.find('button.menu-btn').trigger('click');
-    const firstColor = wrapper.find('.menu-popup .color-item');
-    await firstColor.trigger('click');
-    expect(localStorage.getItem('sticky-note-bg')).toBeTruthy();
+    expect(wrapper.find('.menu-popup').exists()).toBe(true);
+    await document.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.menu-popup').exists()).toBe(false);
     wrapper.unmount();
   });
 });

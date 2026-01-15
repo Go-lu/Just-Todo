@@ -67,11 +67,152 @@ window.services = {
   // 设置窗口置顶
   setAlwaysOnTop(flag) {
     try {
-      const win = remote.getCurrentWindow()
-      win.setAlwaysOnTop(flag)
+      let win = null
+      try {
+        win = remote.getCurrentWindow()
+      } catch (e) {}
+      if (!win) {
+        try {
+          if (window.utools && window.utools.getCurrentBrowserWindow) {
+            win = window.utools.getCurrentBrowserWindow()
+          }
+        } catch (e) {}
+      }
+      
+      if (win) {
+        if (flag) {
+          try { win.setAlwaysOnTop(true, 'floating') } catch (e) {}
+          try { win.setAlwaysOnTop(true, 'screen-saver') } catch (e) {}
+          try { win.setAlwaysOnTop(true) } catch (e) {}
+          try {
+            if (typeof win.show === 'function') win.show()
+          } catch (e) {}
+          try {
+            if (typeof win.moveTop === 'function') win.moveTop()
+          } catch (e) {}
+          try {
+            if (typeof win.focus === 'function') win.focus()
+          } catch (e) {}
+          return true
+        } else {
+          try {
+            win.setAlwaysOnTop(false)
+          } catch (e) {}
+          try {
+            if (typeof win.setVisibleOnAllWorkspaces === 'function') {
+              win.setVisibleOnAllWorkspaces(false)
+            }
+          } catch (e) {}
+          try {
+            setTimeout(() => {
+              try {
+                win.setAlwaysOnTop(false)
+              } catch (e) {}
+              try {
+                if (typeof win.isAlwaysOnTop === 'function' && win.isAlwaysOnTop()) {
+                  try { win.setAlwaysOnTop(false, 'screen-saver') } catch (e2) {}
+                  try { win.setAlwaysOnTop(false, 'floating') } catch (e2) {}
+                  try { win.setAlwaysOnTop(false, 'normal') } catch (e2) {}
+                  try { win.setAlwaysOnTop(true, 'normal') } catch (e2) {}
+                  try { win.setAlwaysOnTop(false) } catch (e2) {}
+                }
+              } catch (e) {}
+            }, 0)
+          } catch (e) {}
+          return true
+        }
+      }
+      return false
     } catch (e) {
       console.error('setAlwaysOnTop failed', e)
+      return false
     }
+  },
+  recreateStickyWindow(pin, bounds) {
+    const width = bounds?.width ?? 320
+    const height = bounds?.height ?? 500
+
+    const options = {
+      width,
+      height,
+      x: typeof bounds?.x === 'number' ? bounds.x : undefined,
+      y: typeof bounds?.y === 'number' ? bounds.y : undefined,
+      title: '待办便签',
+      useContentSize: true,
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      resizable: true,
+      minimizable: false,
+      maximizable: false,
+      alwaysOnTop: false,
+      skipTaskbar: true,
+      show: false,
+      webPreferences: {
+        preload: 'preload/services.js',
+        nodeIntegration: true,
+        contextIsolation: false,
+        enableRemoteModule: true,
+        backgroundThrottling: false
+      }
+    }
+
+    const stickyUrl = (() => {
+      try {
+        return new URL(`sticky.html?pin=${pin ? '1' : '0'}&nonce=${Date.now().toString(36)}`, window.location.href).toString()
+      } catch (e) {
+        return `sticky.html?pin=${pin ? '1' : '0'}&nonce=${Date.now().toString(36)}`
+      }
+    })()
+
+    try {
+      if (window.utools && window.utools.createBrowserWindow) {
+        let win = null
+        win = window.utools.createBrowserWindow(stickyUrl, options, () => {
+          try {
+            if (win && typeof win.show === 'function') win.show()
+          } catch (e) {}
+          try {
+            if (win && typeof win.setAlwaysOnTop === 'function') {
+              if (pin) {
+                try { win.setAlwaysOnTop(true, 'floating') } catch (e) {}
+                try { win.setAlwaysOnTop(true, 'screen-saver') } catch (e) {}
+                try { win.setAlwaysOnTop(true) } catch (e) {}
+              }
+              else {
+                try { win.setAlwaysOnTop(false) } catch (e) {}
+                try { win.setAlwaysOnTop(false, 'normal') } catch (e) {}
+              }
+            }
+          } catch (e) {}
+        })
+        return true
+      }
+    } catch (e) {}
+
+    try {
+      if (remote && remote.BrowserWindow) {
+        const win = new remote.BrowserWindow(options)
+        try {
+          win.loadURL(stickyUrl)
+        } catch (e) {}
+        win.once('ready-to-show', () => {
+          try {
+            win.show()
+          } catch (e) {}
+          try {
+            if (pin) win.setAlwaysOnTop(true)
+            else {
+              try { win.setAlwaysOnTop(false) } catch (e) {}
+              try { win.setAlwaysOnTop(false, 'normal') } catch (e) {}
+            }
+          } catch (e) {}
+        })
+        return true
+      }
+    } catch (e) {}
+
+    return false
   },
   // 读文件
   readFile (file) {

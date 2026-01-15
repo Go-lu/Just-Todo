@@ -9,7 +9,11 @@
     // Get target URL from query parameters
     const params = new URLSearchParams(window.location.search);
     // Default to relative index.html if no target provided
-    const target = params.get('target') || 'index.html#/sticky';
+    let target = params.get('target') || 'index.html#/sticky';
+    const pin = params.get('pin');
+    if (pin !== null) {
+      target += (target.includes('?') ? '&' : '?') + 'pin=' + encodeURIComponent(pin);
+    }
     window.location.replace(target);
   </script>
 </body>
