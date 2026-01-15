@@ -205,6 +205,7 @@ const updateAxisBounds = () => {
 const toggleGroup = (groupId) => {
   collapsedGroups.value[groupId] = !collapsedGroups.value[groupId];
   updateAxisBounds();
+  updateScrollState();
 };
 
 const formatRepeatRule = (todo) => {
@@ -443,6 +444,8 @@ const displayGroups = computed(() => {
 const isCustomSort = computed(() => props.sortState.field !== 'default');
 watch(displayGroups, () => updateAxisBounds());
 watch(() => props.todos.length, () => updateAxisBounds());
+watch(displayGroups, () => updateScrollState());
+watch(() => props.todos.length, () => updateScrollState());
 
 // Logic for Priority View default collapsed state
 const urgentInitialized = ref(false);
@@ -488,6 +491,28 @@ watch(displayGroups, () => {
   checkAndInitSticky();
 });
 
+const groupsRef = ref(null);
+const scrollEnabled = ref(!props.stickyMode);
+const updateScrollState = () => {
+  nextTick(() => {
+    const container = groupsRef.value;
+    if (!container) return;
+    const diff = container.scrollHeight - container.clientHeight;
+    scrollEnabled.value = diff > 16;
+    if (!scrollEnabled.value) {
+      try { container.scrollTop = 0 } catch (e) {}
+    }
+  });
+};
+
+const onWheel = (e) => {
+  if (!scrollEnabled.value) {
+    e.preventDefault();
+    e.stopPropagation();
+    return false;
+  }
+};
+
 // ... existing methods ...
 const activateInput = () => {
   if (props.categoryId === 'completed') return;
@@ -508,12 +533,21 @@ onMounted(() => {
      collapsedGroups.value['completed'] = true;
   }
   updateAxisBounds();
+  updateScrollState();
   window.addEventListener('resize', updateAxisBounds);
+  window.addEventListener('resize', updateScrollState);
+  if (props.stickyMode) {
+    window.addEventListener('wheel', onWheel, { passive: false });
+  }
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('resize', updateAxisBounds);
+  window.removeEventListener('resize', updateScrollState);
+  if (props.stickyMode) {
+    window.removeEventListener('wheel', onWheel);
+  }
 });
 
 const toggleComplete = (todo, event) => {
@@ -583,10 +617,10 @@ const leave = (el) => {
 </script>
 
 <template>
-  <div class="todo-list-container">
+  <div class="todo-list-container" @wheel="onWheel">
     <!-- Header removed as per request -->
 
-    <div class="groups-container">
+    <div class="groups-container" ref="groupsRef" :style="{ overflowY: scrollEnabled ? 'auto' : 'hidden' }" @wheel="onWheel">
       <div class="timeline-content" ref="timelineRef">
         <div class="timeline-axis" :style="axisStyle"></div>
         <div v-for="group in displayGroups" :key="group.id" class="group-section">
@@ -910,6 +944,7 @@ const leave = (el) => {
   display: flex;
   flex-direction: column;
   position: relative;
+  overscroll-behavior: none;
 
   .header {
     padding: 20px 0;
@@ -928,12 +963,14 @@ const leave = (el) => {
     overflow-y: auto;
     position: relative;
     /* Padding moved to inner wrapper to allow axis to scroll with content */
+    overscroll-behavior: none;
   }
 
   .timeline-content {
     position: relative;
-    padding: 10px 8px 90px 8px;
+    padding: 10px 8px 10px 8px;
     min-height: 100%;
+    box-sizing: border-box;
   }
   .timeline-axis {
     position: absolute;
@@ -949,6 +986,9 @@ const leave = (el) => {
   margin-bottom: 30px;
   position: relative;
   z-index: 1;
+}
+.group-section:last-child {
+  margin-bottom: 0;
 }
 
   .group-header {
