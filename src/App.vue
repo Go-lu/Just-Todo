@@ -12,6 +12,8 @@ import Toast from './components/Toast.vue';
 import { db } from './utils/db';
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import 'dayjs/locale/zh-cn';
@@ -45,6 +47,7 @@ const taskDrawer = ref({
 });
 const settingsVisible = ref(false);
 const notificationSettings = ref({});
+const backupSettings = ref({});
 const notifiedTasks = ref(new Set());
 let notificationTimer = null;
 let stickyWindowInstance = null;
@@ -264,6 +267,7 @@ const loadData = () => {
     todos.value = db.getTodos();
     const settings = db.getSettings();
     notificationSettings.value = settings.notification || {};
+    backupSettings.value = settings.backup || {};
     
     // Ensure default categories exist if empty
     if (categories.value.length === 0) {
@@ -722,6 +726,18 @@ const handleSaveSettings = (newSettings) => {
   db.saveSettings(currentSettings);
   notificationSettings.value = newSettings;
   showToast('设置已保存');
+};
+
+const handleSaveBackupSettings = (newSettings) => {
+  const currentSettings = db.getSettings();
+  currentSettings.backup = newSettings;
+  db.saveSettings(currentSettings);
+  backupSettings.value = newSettings;
+};
+
+const handleDataRestored = () => {
+  loadData();
+  showToast('数据已恢复');
 };
 
 const testDesktop = (config) => {
@@ -1209,25 +1225,485 @@ const copyTodoList = () => {
 };
 
 // Export
-const exportMarkdown = () => {
-  let content = '# 待办事项\n\n';
-  categories.value.forEach(cat => {
-    const catTodos = todos.value.filter(t => t.categoryId === cat.id && !t.isCompleted);
-    if (catTodos.length > 0) {
-      content += `## ${cat.name}\n`;
-      catTodos.forEach(t => {
-        content += `- [ ] ${t.content} ${t.dueDate ? `(📅 ${t.dueDate})` : ''}\n`;
-      });
-      content += '\n';
-    }
+const sanitizeFileName = (name) => {
+  return (name || '')
+    .toString()
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .slice(0, 60) || 'export';
+};
+
+const buildMarkdownForTodos = (title, list) => {
+  let content = `# ${title}\n\n`;
+  content += `导出时间：${dayjs().format('YYYY-MM-DD HH:mm:ss')}\n\n`;
+  list.forEach(t => {
+    content += `- [${t.isCompleted ? 'x' : ' '}] ${t.content}${t.dueDate ? ` (📅 ${t.dueDate})` : ''}\n`;
   });
-  
+  return content;
+};
+
+const buildMarkdownForAll = () => {
+  let content = '# 待办事项\n\n';
+  content += `导出时间：${dayjs().format('YYYY-MM-DD HH:mm:ss')}\n\n`;
+
+  categories.value.forEach(cat => {
+    const catTodos = todos.value.filter(t => t.categoryId === cat.id);
+    if (catTodos.length === 0) return;
+    content += `## ${cat.name}\n`;
+    catTodos.forEach(t => {
+      content += `- [${t.isCompleted ? 'x' : ' '}] ${t.content}${t.dueDate ? ` (📅 ${t.dueDate})` : ''}\n`;
+    });
+    content += '\n';
+  });
+
+  return content;
+};
+
+const exportBusy = ref(false);
+
+const getTodoCategoryName = (todo) => {
+  const cat = categories.value.find(c => c.id === todo.categoryId);
+  return cat ? cat.name : '未分类';
+};
+
+const getExportScopeMeta = (scope) => {
+  const isCurrent = scope === 'current';
+  const title = isCurrent ? currentCategoryName.value : '全部待办';
+  const baseName = isCurrent ? sanitizeFileName(currentCategoryName.value) : 'all';
+  return { isCurrent, title, baseName };
+};
+
+const buildExportDom = (scope) => {
+  const { isCurrent, title } = getExportScopeMeta(scope);
+  const root = document.createElement('div');
+  root.style.position = 'fixed';
+  root.style.left = '-99999px';
+  root.style.top = '0';
+  root.style.width = '820px';
+  root.style.padding = '0';
+  root.style.margin = '0';
+  root.style.background = '#ffffff';
+  root.style.color = '#111827';
+  root.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
+
+  const card = document.createElement('div');
+  card.style.border = '1px solid #e5e7eb';
+  card.style.borderRadius = '16px';
+  card.style.overflow = 'hidden';
+  card.style.background = '#ffffff';
+
+  const header = document.createElement('div');
+  header.style.padding = '22px 22px 14px 22px';
+  header.style.background = 'linear-gradient(135deg, #eef2ff, #ffffff)';
+  header.style.borderBottom = '1px solid #e5e7eb';
+
+  const h1 = document.createElement('div');
+  h1.textContent = title;
+  h1.style.fontSize = '22px';
+  h1.style.fontWeight = '700';
+  h1.style.lineHeight = '1.2';
+  header.appendChild(h1);
+
+  const meta = document.createElement('div');
+  meta.textContent = `导出时间：${dayjs().format('YYYY-MM-DD HH:mm:ss')}`;
+  meta.style.marginTop = '6px';
+  meta.style.fontSize = '12px';
+  meta.style.color = '#6b7280';
+  header.appendChild(meta);
+
+  const body = document.createElement('div');
+  body.style.padding = '12px 22px 18px 22px';
+
+  const addSectionTitle = (text) => {
+    const t = document.createElement('div');
+    t.textContent = text;
+    t.style.marginTop = '14px';
+    t.style.fontSize = '14px';
+    t.style.fontWeight = '700';
+    t.style.color = '#111827';
+    body.appendChild(t);
+  };
+
+  const addItem = (text, isCompleted) => {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'flex-start';
+    row.style.gap = '10px';
+    row.style.padding = '10px 0';
+    row.style.borderBottom = '1px solid #f3f4f6';
+
+    const left = document.createElement('div');
+    left.textContent = isCompleted ? '☑' : '☐';
+    left.style.width = '18px';
+    left.style.flex = '0 0 18px';
+    left.style.color = isCompleted ? '#9ca3af' : '#2563eb';
+    left.style.marginTop = '1px';
+
+    const right = document.createElement('div');
+    right.textContent = text;
+    right.style.flex = '1';
+    right.style.fontSize = '14px';
+    right.style.lineHeight = '1.4';
+    right.style.color = isCompleted ? '#9ca3af' : '#111827';
+    if (isCompleted) right.style.textDecoration = 'line-through';
+
+    row.appendChild(left);
+    row.appendChild(right);
+    body.appendChild(row);
+  };
+
+  if (isCurrent) {
+    const list = currentTodos.value || [];
+    list.forEach(t => {
+      const prefix = ['today', 'all', 'plan', 'urgent', 'completed'].includes(currentCategoryId.value)
+        ? `[${getTodoCategoryName(t)}] `
+        : '';
+      addItem(`${prefix}${t.content}${t.dueDate ? ` (📅 ${t.dueDate})` : ''}`, !!t.isCompleted);
+    });
+  } else {
+    categories.value.forEach(cat => {
+      const catTodos = todos.value.filter(t => t.categoryId === cat.id);
+      if (catTodos.length === 0) return;
+      addSectionTitle(cat.name);
+      catTodos.forEach(t => {
+        addItem(`${t.content}${t.dueDate ? ` (📅 ${t.dueDate})` : ''}`, !!t.isCompleted);
+      });
+    });
+  }
+
+  card.appendChild(header);
+  card.appendChild(body);
+  root.appendChild(card);
+  return root;
+};
+
+const renderExportCanvas = async (scope) => {
+  const el = buildExportDom(scope);
+  document.body.appendChild(el);
+  await new Promise(r => requestAnimationFrame(() => r()));
+  try {
+    return await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+  } finally {
+    try {
+      document.body.removeChild(el);
+    } catch (e) {}
+  }
+};
+
+const pickSavePath = ({ title, defaultPath, filters }) => {
+  try {
+    if (window.services?.showSaveDialog) {
+      const res = window.services.showSaveDialog({ title, defaultPath, filters });
+      if (!res) return { filePath: '', canceled: true, error: 'showSaveDialog 返回空结果' };
+      if (res.error) return { filePath: '', canceled: true, error: res.error };
+      if (res.canceled) return { filePath: '', canceled: true, error: '' };
+      return { filePath: res.filePath || '', canceled: false, error: '' };
+    }
+  } catch (e) {
+    return { filePath: '', canceled: true, error: e?.message || String(e) };
+  }
+
+  try {
+    if (window.utools && typeof window.utools.showSaveDialog === 'function') {
+      const r = window.utools.showSaveDialog({ title, defaultPath, filters });
+      if (!r) return { filePath: '', canceled: true, error: '' };
+      return { filePath: r, canceled: false, error: '' };
+    }
+  } catch (e) {
+    return { filePath: '', canceled: true, error: e?.message || String(e) };
+  }
+
+  return { filePath: '', canceled: true, error: '保存对话框不可用' };
+};
+
+const pickSaveHandle = async ({ suggestedName, types }) => {
+  if (typeof window.showSaveFilePicker !== 'function') {
+    return { canceled: true, unsupported: true, handle: null, error: '' };
+  }
+  try {
+    const handle = await window.showSaveFilePicker({ suggestedName, types });
+    return { canceled: false, unsupported: false, handle, error: '' };
+  } catch (e) {
+    if (e?.name === 'AbortError') return { canceled: true, unsupported: false, handle: null, error: '' };
+    return { canceled: true, unsupported: false, handle: null, error: e?.message || String(e) };
+  }
+};
+
+const writeBlobToHandle = async (handle, blob) => {
+  const writable = await handle.createWritable();
+  await writable.write(blob);
+  await writable.close();
+};
+
+const canvasToBlob = (canvas, type = 'image/png', quality) => {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error('生成文件失败'))),
+      type,
+      quality
+    );
+  });
+};
+
+const exportPng = async (scope) => {
+  const { title, baseName } = getExportScopeMeta(scope);
+  const fileName = `todo_export_${baseName}_${dayjs().format('YYYYMMDD_HHmmss')}.png`;
+  if (window.services?.writeBase64FileToPath) {
+    const picked = pickSavePath({
+      title: `保存导出图片（${title}）`,
+      defaultPath: fileName,
+      filters: [{ name: 'PNG', extensions: ['png'] }]
+    });
+    if (!picked || picked.canceled) {
+      if (picked?.error) showToast('导出失败：' + picked.error, 'error');
+      return;
+    }
+    const filePath = picked.filePath;
+    showToast('正在导出...');
+    const canvas = await renderExportCanvas(scope);
+    const dataUrl = canvas.toDataURL('image/png');
+    const base64 = (dataUrl.split(',')[1] || '').trim();
+    window.services.writeBase64FileToPath(filePath, base64);
+    showToast('已导出：' + filePath);
+    return;
+  }
+
+  const handlePicked = await pickSaveHandle({
+    suggestedName: fileName,
+    types: [{ description: 'PNG', accept: { 'image/png': ['.png'] } }]
+  });
+  if (!handlePicked.unsupported) {
+    if (handlePicked.canceled) {
+      if (handlePicked.error) showToast('导出失败：' + handlePicked.error, 'error');
+      return;
+    }
+    showToast('正在导出...');
+    const canvas = await renderExportCanvas(scope);
+    const blob = await canvasToBlob(canvas, 'image/png');
+    await writeBlobToHandle(handlePicked.handle, blob);
+    showToast('已导出：' + (handlePicked.handle?.name || fileName));
+    return;
+  }
+
+  const canvas = await renderExportCanvas(scope);
+  const dataUrl = canvas.toDataURL('image/png');
+
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+};
+
+const exportPdf = async (scope) => {
+  const { title, baseName } = getExportScopeMeta(scope);
+  const fileName = `todo_export_${baseName}_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
+  if (window.services?.writeBase64FileToPath) {
+    const picked = pickSavePath({
+      title: `保存导出 PDF（${title}）`,
+      defaultPath: fileName,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    });
+    if (!picked || picked.canceled) {
+      if (picked?.error) showToast('导出失败：' + picked.error, 'error');
+      return;
+    }
+    const filePath = picked.filePath;
+    showToast('正在导出...');
+    const canvas = await renderExportCanvas(scope);
+    const imgData = canvas.toDataURL('image/png');
+
+    const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    let position = 0;
+    while (position < imgHeight) {
+      pdf.addImage(imgData, 'PNG', 0, -position, imgWidth, imgHeight);
+      position += pageHeight;
+      if (position < imgHeight) pdf.addPage();
+    }
+
+    const dataUri = pdf.output('datauristring');
+    const base64 = (dataUri.split(',')[1] || '').trim();
+    window.services.writeBase64FileToPath(filePath, base64);
+    showToast('已导出：' + filePath);
+    return;
+  }
+
+  const handlePicked = await pickSaveHandle({
+    suggestedName: fileName,
+    types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }]
+  });
+  if (!handlePicked.unsupported) {
+    if (handlePicked.canceled) {
+      if (handlePicked.error) showToast('导出失败：' + handlePicked.error, 'error');
+      return;
+    }
+    showToast('正在导出...');
+    const canvas = await renderExportCanvas(scope);
+    const imgData = canvas.toDataURL('image/png');
+
+    const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    let position = 0;
+    while (position < imgHeight) {
+      pdf.addImage(imgData, 'PNG', 0, -position, imgWidth, imgHeight);
+      position += pageHeight;
+      if (position < imgHeight) pdf.addPage();
+    }
+
+    const blob = pdf.output('blob');
+    await writeBlobToHandle(handlePicked.handle, blob);
+    showToast('已导出：' + (handlePicked.handle?.name || fileName));
+    return;
+  }
+
+  const canvas = await renderExportCanvas(scope);
+  const imgData = canvas.toDataURL('image/png');
+
+  const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+
+  const imgWidth = pageWidth;
+  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+  let position = 0;
+  while (position < imgHeight) {
+    pdf.addImage(imgData, 'PNG', 0, -position, imgWidth, imgHeight);
+    position += pageHeight;
+    if (position < imgHeight) pdf.addPage();
+  }
+
+  pdf.save(fileName);
+};
+
+const exportMarkdown = async (scope = 'all') => {
+  const isCurrent = scope === 'current';
+  const title = isCurrent ? currentCategoryName.value : '全部待办';
+  const baseName = isCurrent ? sanitizeFileName(currentCategoryName.value) : 'all';
+  const content = isCurrent
+    ? buildMarkdownForTodos(currentCategoryName.value, currentTodos.value)
+    : buildMarkdownForAll();
+
+  const suggestedName = `todo_export_${baseName}_${dayjs().format('YYYYMMDD_HHmmss')}.md`;
+
+  if (window.services?.showSaveDialog && window.services?.writeTextFileToPath) {
+    const picked = pickSavePath({
+      title: `保存导出文件（${title}）`,
+      defaultPath: suggestedName,
+      filters: [{ name: 'Markdown', extensions: ['md'] }]
+    });
+    if (!picked || picked.canceled) {
+      if (picked?.error) showToast('导出失败：' + picked.error, 'error');
+      return;
+    }
+    const filePath = picked.filePath;
+    window.services.writeTextFileToPath(filePath, content, 'utf-8');
+    showToast('已导出：' + filePath);
+    return;
+  }
+
+  const handlePicked = await pickSaveHandle({
+    suggestedName,
+    types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown'] } }]
+  });
+  if (!handlePicked.unsupported) {
+    if (handlePicked.canceled) {
+      if (handlePicked.error) showToast('导出失败：' + handlePicked.error, 'error');
+      return;
+    }
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    await writeBlobToHandle(handlePicked.handle, blob);
+    showToast('已导出：' + (handlePicked.handle?.name || suggestedName));
+    return;
+  }
+
   const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `todo_export_${dayjs().format('YYYYMMDD')}.md`;
+  a.download = suggestedName;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+};
+
+const exportBy = async (scope, type) => {
+  if (exportBusy.value) return;
+  exportBusy.value = true;
+  try {
+    if (type === 'png') await exportPng(scope);
+    else if (type === 'pdf') await exportPdf(scope);
+    else await exportMarkdown(scope);
+  } catch (e) {
+    showToast('导出失败：' + (e?.message || '未知错误'), 'error');
+  } finally {
+    exportBusy.value = false;
+  }
+};
+
+const exportMenuCloseTimer = ref(null);
+const clearExportMenuCloseTimer = () => {
+  if (!exportMenuCloseTimer.value) return;
+  clearTimeout(exportMenuCloseTimer.value);
+  exportMenuCloseTimer.value = null;
+};
+const scheduleCloseExportMenu = (delayMs = 180) => {
+  clearExportMenuCloseTimer();
+  exportMenuCloseTimer.value = setTimeout(() => {
+    if (contextMenu.value.visible && contextMenu.value.type === 'export') closeContextMenu();
+  }, delayMs);
+};
+
+const openExportMenuFromEl = (el) => {
+  clearExportMenuCloseTimer();
+  const rect = el.getBoundingClientRect();
+  const x = Math.round(rect.left + rect.width / 2);
+  const y = Math.round(rect.bottom + 8);
+  const fakeEvent = {
+    clientX: x,
+    clientY: y,
+    preventDefault() {},
+    stopPropagation() {}
+  };
+  showContextMenu({ event: fakeEvent, type: 'export', item: null });
+};
+
+const handleExportButtonEnter = (event) => {
+  const el = event.currentTarget;
+  if (!el) return;
+  openExportMenuFromEl(el);
+};
+
+const handleExportButtonLeave = () => {
+  scheduleCloseExportMenu();
+};
+
+const handleContextMenuEnter = () => {
+  if (contextMenu.value.type === 'export') clearExportMenuCloseTimer();
+};
+
+const handleContextMenuLeave = () => {
+  if (contextMenu.value.type === 'export') scheduleCloseExportMenu();
+};
+
+const showExportContextMenu = (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  showContextMenu({ event, type: 'export', item: null });
 };
 
 </script>
@@ -1266,6 +1742,17 @@ const exportMarkdown = () => {
           <!-- Pin Button -->
           <button v-if="isUtools" class="icon-btn" @click="togglePin" title="开启便签模式" style="margin-right: 8px;">
             <i class="ri-pushpin-line"></i>
+          </button>
+
+          <button
+            class="icon-btn"
+            @mouseenter="handleExportButtonEnter"
+            @mouseleave="handleExportButtonLeave"
+            @click.stop="showExportContextMenu"
+            title="导出"
+            style="margin-right: 4px;"
+          >
+            <i class="ri-download-cloud-line"></i>
           </button>
           
           <!-- Sort Button -->
@@ -1350,6 +1837,8 @@ const exportMarkdown = () => {
       :class="{ 'submenu-left': contextMenu.submenuDirection === 'left' }"
       :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
       @click.stop
+      @mouseenter="handleContextMenuEnter"
+      @mouseleave="handleContextMenuLeave"
     >
       <template v-if="contextMenu.type === 'category'">
         <div class="menu-item" @click="handleMenuAction('pin-top')">置顶清单</div>
@@ -1402,6 +1891,25 @@ const exportMarkdown = () => {
         </div>
         <div class="menu-item delete" @click="handleMenuAction('delete')">删除任务</div>
       </template>
+
+      <template v-if="contextMenu.type === 'export'">
+        <div class="menu-item has-submenu">
+          导出全部
+          <div class="submenu">
+            <div class="menu-item" @click.stop="exportBy('all', 'png'); closeContextMenu()">图片（PNG）</div>
+            <div class="menu-item" @click.stop="exportBy('all', 'pdf'); closeContextMenu()">PDF</div>
+            <div class="menu-item" @click.stop="exportBy('all', 'md'); closeContextMenu()">Markdown</div>
+          </div>
+        </div>
+        <div class="menu-item has-submenu">
+          导出当前分类
+          <div class="submenu">
+            <div class="menu-item" @click.stop="exportBy('current', 'png'); closeContextMenu()">图片（PNG）</div>
+            <div class="menu-item" @click.stop="exportBy('current', 'pdf'); closeContextMenu()">PDF</div>
+            <div class="menu-item" @click.stop="exportBy('current', 'md'); closeContextMenu()">Markdown</div>
+          </div>
+        </div>
+      </template>
     </div>
 
   </div>
@@ -1418,7 +1926,12 @@ const exportMarkdown = () => {
     <SettingsModal
       v-model:visible="settingsVisible"
       :initial-settings="notificationSettings"
+      :initial-backup-settings="backupSettings"
+      :export-title="currentCategoryName"
+      :export-todos="currentTodos"
       @save="handleSaveSettings"
+      @save-backup="handleSaveBackupSettings"
+      @data-restored="handleDataRestored"
       @test-desktop="testDesktop"
       @test-email="testEmail"
       @test-bark="testBark"
@@ -1782,9 +2295,9 @@ const exportMarkdown = () => {
       &:hover {
         > .submenu {
           left: auto;
-          right: 100%;
+          right: calc(100% - 2px);
           margin-left: 0;
-          margin-right: 8px;
+          margin-right: 0;
         }
       }
     }
@@ -1793,9 +2306,9 @@ const exportMarkdown = () => {
   .submenu {
     display: none;
     position: absolute;
-    left: 100%;
+    left: calc(100% - 2px);
     top: -4px;
-    margin-left: 8px;
+    margin-left: 0;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow-lg);

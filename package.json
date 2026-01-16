@@ -7,6 +7,8 @@
   "dependencies": {
     "canvas-confetti": "^1.9.4",
     "dayjs": "^1.11.19",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.2",
     "remixicon": "^4.8.0",
     "uuid": "^13.0.0",
     "vue": "^3.5.13",

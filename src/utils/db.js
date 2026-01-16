@@ -42,6 +42,63 @@ function putDoc(doc) {
   }
 }
 
+export const BACKUP_VERSION = 1;
+
+export function createBackupPayload(extra = {}) {
+  const data = {
+    categories: db.getCategories(),
+    todos: db.getTodos(),
+    settings: db.getSettings()
+  };
+
+  const themeMode = (() => {
+    try {
+      return localStorage.getItem('theme-mode') || 'system';
+    } catch (e) {
+      return 'system';
+    }
+  })();
+
+  return {
+    app: 'just-todo',
+    version: BACKUP_VERSION,
+    exportedAt: Date.now(),
+    themeMode,
+    data,
+    extra
+  };
+}
+
+export function applyBackupPayload(payload) {
+  if (!payload || typeof payload !== 'object') throw new Error('备份数据格式错误');
+  if (payload.app !== 'just-todo') throw new Error('不是 Just Todo 备份文件');
+  if (!payload.data || typeof payload.data !== 'object') throw new Error('备份缺少 data 字段');
+
+  const categories = Array.isArray(payload.data.categories) ? payload.data.categories : null;
+  const todos = Array.isArray(payload.data.todos) ? payload.data.todos : null;
+  const settings = payload.data.settings && typeof payload.data.settings === 'object' ? payload.data.settings : null;
+
+  if (!categories) throw new Error('备份 categories 格式错误');
+  if (!todos) throw new Error('备份 todos 格式错误');
+  if (!settings) throw new Error('备份 settings 格式错误');
+
+  const nextCategories = categories.some(c => c && c.id === 'default')
+    ? categories
+    : [{ id: 'default', name: '默认清单', sort: 0, icon: '📝', color: '#1890ff' }, ...categories];
+
+  db.saveCategories(JSON.parse(JSON.stringify(nextCategories)));
+  db.saveTodos(JSON.parse(JSON.stringify(todos)));
+  db.saveSettings(JSON.parse(JSON.stringify(settings)));
+
+  if (payload.themeMode) {
+    try {
+      localStorage.setItem('theme-mode', payload.themeMode);
+    } catch (e) {}
+  }
+
+  return true;
+}
+
 export const db = {
   getCategories() {
     let doc = getDoc('categories');

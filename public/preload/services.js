@@ -50,6 +50,8 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const http = require('node:http')
+const https = require('node:https')
 const nodemailer = require('nodemailer')
 const { remote } = require('electron')
 
@@ -218,10 +220,68 @@ window.services = {
   readFile (file) {
     return fs.readFileSync(file, { encoding: 'utf-8' })
   },
+  showSaveDialog (options = {}) {
+    try {
+      if (window.utools && typeof window.utools.showSaveDialog === 'function') {
+        const res = window.utools.showSaveDialog(options)
+        if (!res) return { canceled: true, filePath: '' }
+        return { canceled: false, filePath: res }
+      }
+    } catch (e) {
+      return { canceled: true, filePath: '', error: e.message }
+    }
+    try {
+      if (!remote || !remote.dialog || typeof remote.getCurrentWindow !== 'function') {
+        return { canceled: true, filePath: '', error: 'remote 不可用' }
+      }
+      const win = remote.getCurrentWindow()
+      const res = remote.dialog.showSaveDialogSync(win, options)
+      if (!res) return { canceled: true, filePath: '' }
+      return { canceled: false, filePath: res }
+    } catch (e) {
+      return { canceled: true, filePath: '', error: e.message }
+    }
+  },
+  showOpenDialog (options = {}) {
+    try {
+      if (window.utools && typeof window.utools.showOpenDialog === 'function') {
+        const res = window.utools.showOpenDialog(options)
+        if (!res || !Array.isArray(res) || res.length === 0) return { canceled: true, filePaths: [] }
+        return { canceled: false, filePaths: res }
+      }
+    } catch (e) {
+      return { canceled: true, filePaths: [], error: e.message }
+    }
+    try {
+      if (!remote || !remote.dialog || typeof remote.getCurrentWindow !== 'function') {
+        return { canceled: true, filePaths: [], error: 'remote 不可用' }
+      }
+      const win = remote.getCurrentWindow()
+      const res = remote.dialog.showOpenDialogSync(win, options)
+      if (!res || !Array.isArray(res) || res.length === 0) return { canceled: true, filePaths: [] }
+      return { canceled: false, filePaths: res }
+    } catch (e) {
+      return { canceled: true, filePaths: [], error: e.message }
+    }
+  },
+  writeTextFileToPath (filePath, text, encoding = 'utf-8') {
+    fs.writeFileSync(filePath, text, { encoding })
+    return filePath
+  },
+  writeBase64FileToPath (filePath, base64Data) {
+    fs.writeFileSync(filePath, base64Data, { encoding: 'base64' })
+    return filePath
+  },
   // 文本写入到下载目录
   writeTextFile (text) {
     const filePath = path.join(window.utools.getPath('downloads'), Date.now().toString() + '.txt')
     fs.writeFileSync(filePath, text, { encoding: 'utf-8' })
+    return filePath
+  },
+  writeFileToDownloads (fileName, text, encoding = 'utf-8') {
+    const safeName = (fileName || '').toString().replace(/[\\/:*?"<>|]/g, '_')
+    const filePath = path.join(window.utools.getPath('downloads'), safeName || (Date.now().toString() + '.txt'))
+    fs.writeFileSync(filePath, text, { encoding })
     return filePath
   },
   // 图片写入到下载目录
@@ -231,6 +291,52 @@ window.services = {
     const filePath = path.join(window.utools.getPath('downloads'), Date.now().toString() + '.' + matchs[1])
     fs.writeFileSync(filePath, base64Url.substring(matchs[0].length), { encoding: 'base64' })
     return filePath
+  },
+  writeBase64FileToDownloads (fileName, base64Data) {
+    const safeName = (fileName || '').toString().replace(/[\\/:*?"<>|]/g, '_')
+    const filePath = path.join(window.utools.getPath('downloads'), safeName || (Date.now().toString() + '.bin'))
+    fs.writeFileSync(filePath, base64Data, { encoding: 'base64' })
+    return filePath
+  },
+  requestText ({ url, method = 'GET', headers = {}, body = null, timeoutMs = 20000 }) {
+    return new Promise((resolve, reject) => {
+      try {
+        const u = new URL(url)
+        const isHttps = u.protocol === 'https:'
+        const lib = isHttps ? https : http
+        const options = {
+          protocol: u.protocol,
+          hostname: u.hostname,
+          port: u.port || (isHttps ? 443 : 80),
+          path: u.pathname + u.search,
+          method,
+          headers
+        }
+
+        const req = lib.request(options, res => {
+          const chunks = []
+          res.on('data', c => chunks.push(c))
+          res.on('end', () => {
+            const buf = Buffer.concat(chunks)
+            resolve({
+              status: res.statusCode || 0,
+              headers: res.headers || {},
+              body: buf.toString('utf-8')
+            })
+          })
+        })
+
+        req.on('error', err => reject(err))
+        req.setTimeout(timeoutMs, () => {
+          try { req.destroy(new Error('Request timeout')) } catch (e) {}
+        })
+
+        if (body) req.write(body)
+        req.end()
+      } catch (e) {
+        reject(e)
+      }
+    })
   },
   // 发送邮件
   async sendEmail(config, mailOptions) {
