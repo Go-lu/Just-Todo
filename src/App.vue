@@ -12,12 +12,9 @@ import Toast from './components/Toast.vue';
 import { db } from './utils/db';
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import 'dayjs/locale/zh-cn';
-import confetti from 'canvas-confetti';
 
 dayjs.extend(isSameOrBefore);
 dayjs.extend(isSameOrAfter);
@@ -54,6 +51,20 @@ let stickyWindowInstance = null;
 const syncInstanceId = uuidv4();
 let syncChannel = null;
 let syncReloadTimer = null;
+let html2canvasCache = null;
+let jsPDFCache = null;
+const getHtml2canvas = async () => {
+  if (html2canvasCache) return html2canvasCache;
+  const mod = await import('html2canvas');
+  html2canvasCache = mod.default || mod;
+  return html2canvasCache;
+};
+const getJsPDF = async () => {
+  if (jsPDFCache) return jsPDFCache;
+  const mod = await import('jspdf');
+  jsPDFCache = mod.jsPDF || mod.default?.jsPDF || mod.default;
+  return jsPDFCache;
+};
 const scheduleSyncReload = () => {
   if (syncReloadTimer) clearTimeout(syncReloadTimer);
   syncReloadTimer = setTimeout(() => {
@@ -502,13 +513,17 @@ const updateTodo = (updatedTodo) => {
       updatedTodo.history.push({ type: 'complete', timestamp: Date.now() });
       
       // Trigger Global Confetti
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'],
-        zIndex: 99999
-      });
+      import('canvas-confetti')
+        .then(({ default: confetti }) => {
+          confetti({
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 },
+            colors: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'],
+            zIndex: 99999
+          });
+        })
+        .catch(() => {});
     } else if (!updatedTodo.isCompleted && oldTodo.isCompleted) {
       updatedTodo.completedAt = null;
       if (!updatedTodo.history) updatedTodo.history = [];
@@ -999,7 +1014,22 @@ const closeContextMenu = () => {
 };
 
 // Modal State
-const inputModal = ref({ visible: false, title: '', value: '', icon: '', color: '', isCategory: false, callback: null, searchText: '' });
+const inputModal = ref({ visible: false, title: '', value: '', icon: '', color: '', isCategory: false, callback: null });
+const iconPickerModal = ref({ visible: false, searchText: '' });
+const openIconPickerModal = () => {
+  iconPickerModal.value.visible = true;
+  iconPickerModal.value.searchText = '';
+  nextTick(() => {
+    document.getElementById('icon-picker-search')?.focus();
+  });
+};
+const closeIconPickerModal = () => {
+  iconPickerModal.value.visible = false;
+};
+const selectIcon = (icon) => {
+  inputModal.value.icon = icon;
+  closeIconPickerModal();
+};
 
 const showInputModal = (title, defaultValue, callback) => {
   inputModal.value = {
@@ -1037,8 +1067,8 @@ const presetIcons = [
 ];
 
 const filteredIcons = computed(() => {
-  if (!inputModal.value.searchText) return presetIcons;
-  const lowerSearch = inputModal.value.searchText.toLowerCase();
+  if (!iconPickerModal.value.searchText) return presetIcons;
+  const lowerSearch = iconPickerModal.value.searchText.toLowerCase();
   return presetIcons.filter(icon => icon.toLowerCase().includes(lowerSearch));
 });
 
@@ -1444,6 +1474,7 @@ const renderExportCanvas = async (scope) => {
   document.body.appendChild(el);
   await new Promise(r => requestAnimationFrame(() => r()));
   try {
+    const html2canvas = await getHtml2canvas();
     return await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
   } finally {
     try {
@@ -1561,6 +1592,7 @@ const exportPng = async (scope) => {
 const exportPdf = async (scope) => {
   const { title, baseName } = getExportScopeMeta(scope);
   const fileName = `todo_export_${baseName}_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
+  const jsPDF = await getJsPDF();
   if (window.services?.writeBase64FileToPath) {
     const picked = pickSavePath({
       title: `保存导出 PDF（${title}）`,
@@ -2002,73 +2034,99 @@ const showExportContextMenu = (event) => {
     <div v-if="inputModal.visible" class="modal-overlay" @click.self="cancelInputModal">
       <div class="modal-box">
         <h3>{{ inputModal.title }}</h3>
-        
-        <!-- Category Edit Mode -->
-        <template v-if="inputModal.isCategory">
-          <div class="input-group">
-            <label>清单名称</label>
-            <input 
-              id="modal-input"
-              v-model="inputModal.value" 
-              placeholder="请输入清单名称"
-              @keyup.enter="confirmInputModal"
-            />
-          </div>
 
-          <div class="input-group">
-            <div class="search-box">
-               <input 
-                v-model="inputModal.searchText"
-                placeholder="搜索图标..."
-                class="search-input"
+        <div class="modal-body">
+          <template v-if="inputModal.isCategory">
+            <div class="input-group">
+              <label>清单名称</label>
+              <input 
+                id="modal-input"
+                v-model="inputModal.value" 
+                placeholder="请输入清单名称"
+                @keyup.enter="confirmInputModal"
               />
             </div>
-            <label>选择图标</label>
-            <div class="icon-grid">
-              <div 
-                v-for="icon in filteredIcons" 
-                :key="icon"
-                class="icon-item"
-                :class="{ active: inputModal.icon === icon }"
-                :style="{ color: inputModal.icon === icon ? inputModal.color : '' }"
-                @click="inputModal.icon = icon"
-              >
-                <i :class="icon"></i>
+
+            <div class="input-group">
+              <label>选择图标</label>
+              <div class="icon-field">
+                <div class="icon-preview" :style="{ color: inputModal.color }">
+                  <i :class="inputModal.icon"></i>
+                </div>
+                <div class="icon-field-text">{{ inputModal.icon }}</div>
+                <button class="icon-field-btn" type="button" @click="openIconPickerModal">选择</button>
               </div>
             </div>
-          </div>
 
-          <div class="input-group">
-            <label>选择颜色</label>
-            <div class="color-grid">
-              <div 
-                v-for="color in presetColors" 
-                :key="color"
-                class="color-item"
-                :class="{ active: inputModal.color === color }"
-                :style="{ backgroundColor: color }"
-                @click="inputModal.color = color"
-              >
-                <span v-if="inputModal.color === color" class="check-mark">✓</span>
+            <div class="input-group">
+              <label>选择颜色</label>
+              <div class="color-grid">
+                <div 
+                  v-for="color in presetColors" 
+                  :key="color"
+                  class="color-item"
+                  :class="{ active: inputModal.color === color }"
+                  :style="{ backgroundColor: color }"
+                  @click="inputModal.color = color"
+                >
+                  <span v-if="inputModal.color === color" class="check-mark">✓</span>
+                </div>
               </div>
             </div>
-          </div>
-        </template>
+          </template>
 
-        <!-- Simple Input Mode (e.g. Date) -->
-        <template v-else>
-           <input 
-            id="modal-input"
-            v-model="inputModal.value" 
-            placeholder="请输入内容"
-            @keyup.enter="confirmInputModal"
-            @keyup.esc="cancelInputModal"
-          />
-        </template>
+          <template v-else>
+             <input 
+              id="modal-input"
+              v-model="inputModal.value" 
+              placeholder="请输入内容"
+              @keyup.enter="confirmInputModal"
+              @keyup.esc="cancelInputModal"
+            />
+          </template>
+        </div>
 
         <div class="modal-actions">
           <button @click="cancelInputModal">取消</button>
           <button class="primary" @click="confirmInputModal">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="iconPickerModal.visible" class="modal-overlay icon-picker-overlay" @click.self="closeIconPickerModal">
+      <div class="modal-box icon-picker-modal">
+        <div class="modal-header">
+          <h3>选择图标</h3>
+          <button class="icon-picker-close" type="button" @click="closeIconPickerModal">×</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="icon-picker-search">
+            <input
+              id="icon-picker-search"
+              v-model="iconPickerModal.searchText"
+              placeholder="搜索图标，例如：calendar / star"
+            />
+          </div>
+
+          <div v-if="filteredIcons.length" class="icon-grid">
+            <button
+              v-for="icon in filteredIcons"
+              :key="icon"
+              class="icon-item"
+              :class="{ active: inputModal.icon === icon }"
+              type="button"
+              @click="selectIcon(icon)"
+            >
+              <i :class="icon"></i>
+            </button>
+          </div>
+
+          <div v-else class="icon-empty">未找到匹配图标</div>
+        </div>
+
+        <div class="modal-actions">
+          <button @click="closeIconPickerModal">取消</button>
         </div>
       </div>
     </div>
@@ -2390,90 +2448,122 @@ const showExportContextMenu = (event) => {
   display: flex;
   justify-content: center;
   align-items: center;
+  padding: 12px;
+  overflow-y: auto;
   z-index: 2000;
   
   .modal-box {
     background: var(--bg-secondary);
-    padding: 24px;
+    padding: 16px;
     border-radius: var(--radius-lg);
-    min-width: 320px;
+    min-width: 300px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 32px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     color: var(--text-color);
     box-shadow: var(--shadow-lg);
     border: 1px solid var(--border-color);
     
     h3 {
-      margin-top: 0;
-      margin-bottom: 20px;
-      font-size: 18px;
+      margin: 0;
+      font-size: 16px;
       font-weight: 600;
+    }
+
+    > h3 {
+      margin-bottom: 12px;
     }
     
     input {
       width: 100%;
-      padding: 10px 12px;
-      margin: 8px 0 20px;
+      padding: 8px 10px;
+      margin: 0;
       border: 1px solid var(--input-border);
       border-radius: var(--radius-sm);
       box-sizing: border-box;
       background: var(--input-bg);
       color: var(--text-color);
-      font-size: 14px;
+      font-size: 13px;
       
       &:focus {
         border-color: var(--primary-color);
         box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
       }
     }
+
+    .modal-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
     
     .input-group {
-      margin-bottom: 20px;
+      margin-bottom: 12px;
       
-      .search-box {
-        margin-bottom: 12px;
-        .search-input {
-          margin: 0;
-        }
-      }
-
       label {
         display: block;
-        margin-bottom: 8px;
-        font-size: 14px;
+        margin-bottom: 4px;
+        font-size: 13px;
         font-weight: 500;
         color: var(--text-color);
       }
+
+      input {
+        margin-top: 4px;
+      }
       
-      .icon-grid {
-        display: grid;
-        grid-template-columns: repeat(8, 1fr);
+      .icon-field {
+        display: flex;
+        align-items: center;
         gap: 8px;
-        max-height: 180px;
-        overflow-y: auto;
-        padding: 8px;
-        border: 1px solid var(--border-color);
-        border-radius: var(--radius-md);
-        background: var(--bg-color);
-        
-        .icon-item {
+        border: 1px solid var(--input-border);
+        border-radius: var(--radius-sm);
+        background: var(--input-bg);
+        padding: 6px 8px;
+
+        .icon-preview {
+          width: 30px;
+          height: 30px;
+          border-radius: var(--radius-sm);
           display: flex;
           align-items: center;
           justify-content: center;
-          height: 36px;
-          font-size: 20px;
-          cursor: pointer;
-          border-radius: var(--radius-sm);
-          transition: all 0.2s;
-          color: var(--secondary-text);
-          
-          &:hover {
-            background-color: var(--hover-bg);
-            color: var(--text-color);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          flex: 0 0 30px;
+
+          i {
+            font-size: 16px;
           }
-          
-          &.active {
-            background-color: var(--active-bg);
-            color: var(--primary-color);
-            border: 1px solid var(--primary-color);
+        }
+
+        .icon-field-text {
+          flex: 1 1 auto;
+          min-width: 0;
+          font-size: 12px;
+          color: var(--secondary-text);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .icon-field-btn {
+          flex: 0 0 auto;
+          padding: 6px 10px;
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+          background: transparent;
+          color: var(--text-color);
+          border: 1px solid var(--border-color);
+
+          &:hover {
+            background: var(--hover-bg);
           }
         }
       }
@@ -2481,11 +2571,12 @@ const showExportContextMenu = (event) => {
       .color-grid {
         display: grid;
         grid-template-columns: repeat(8, 1fr);
-        gap: 10px;
+        gap: 8px;
+        padding-left: 6px;
         
         .color-item {
-          height: 28px;
-          width: 28px;
+          height: 24px;
+          width: 24px;
           aspect-ratio: 1;
           border-radius: 50%;
           cursor: pointer;
@@ -2517,13 +2608,13 @@ const showExportContextMenu = (event) => {
     .modal-actions {
        display: flex;
        justify-content: flex-end;
-       gap: 12px;
-       margin-top: 24px;
+       gap: 8px;
+       margin-top: 14px;
        
        button {
-         padding: 8px 16px;
+         padding: 6px 12px;
          border-radius: var(--radius-sm);
-         font-size: 14px;
+         font-size: 13px;
          font-weight: 500;
          cursor: pointer;
          transition: all 0.2s;
@@ -2547,6 +2638,78 @@ const showExportContextMenu = (event) => {
          }
        }
     }
+  }
+}
+
+.icon-picker-overlay {
+  z-index: 2100;
+}
+
+.icon-picker-modal {
+  width: 520px;
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .icon-picker-close {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--hover-bg);
+    }
+  }
+
+  .icon-picker-search {
+    margin-bottom: 12px;
+  }
+
+  .icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+    gap: 8px;
+  }
+
+  .icon-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    font-size: 20px;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
+    color: var(--secondary-text);
+    background: transparent;
+    border: 1px solid transparent;
+
+    &:hover {
+      background-color: var(--hover-bg);
+      color: var(--text-color);
+    }
+
+    &.active {
+      background-color: var(--active-bg);
+      color: var(--primary-color);
+      border-color: var(--primary-color);
+    }
+  }
+
+  .icon-empty {
+    padding: 12px 0;
+    color: var(--secondary-text);
+    font-size: 13px;
+    text-align: center;
   }
 }
 </style>

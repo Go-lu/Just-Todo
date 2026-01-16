@@ -589,7 +589,7 @@ onMounted(() => {
         <div class="menu-item color-item">
           <span>颜色</span>
           <div class="color-follow">
-            <span class="color-follow-label">系统</span>
+            <span class="color-follow-label">跟随主题</span>
             <div class="toggle-switch" :class="{ active: colorFollowSystem }" @click="toggleColorFollowSystem">
               <div class="toggle-knob"></div>
             </div>
