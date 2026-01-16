@@ -51,6 +51,35 @@ const backupSettings = ref({});
 const notifiedTasks = ref(new Set());
 let notificationTimer = null;
 let stickyWindowInstance = null;
+const syncInstanceId = uuidv4();
+let syncChannel = null;
+let syncReloadTimer = null;
+const scheduleSyncReload = () => {
+  if (syncReloadTimer) clearTimeout(syncReloadTimer);
+  syncReloadTimer = setTimeout(() => {
+    syncReloadTimer = null;
+    loadData();
+  }, 60);
+};
+const broadcastDataChanged = (reason = '') => {
+  const msg = { type: 'data-changed', sourceId: syncInstanceId, reason, at: Date.now() };
+  try {
+    if (syncChannel) syncChannel.postMessage(msg);
+  } catch (e) {}
+  try {
+    localStorage.setItem('__just_todo_sync__', JSON.stringify(msg));
+  } catch (e) {}
+};
+const handleStorageSync = (e) => {
+  if (!e) return;
+  if (e.key !== '__just_todo_sync__') return;
+  if (!e.newValue) return;
+  try {
+    const msg = JSON.parse(e.newValue);
+    if (!msg || msg.sourceId === syncInstanceId) return;
+  } catch (err) {}
+  scheduleSyncReload();
+};
 
 const toast = ref({
   visible: false,
@@ -108,6 +137,19 @@ onMounted(() => {
 onUnmounted(() => {
   mediaQuery && mediaQuery.removeEventListener('change', handleSystemThemeChange);
   if (notificationTimer) clearInterval(notificationTimer);
+  try {
+    window.removeEventListener('storage', handleStorageSync);
+  } catch (e) {}
+  if (syncReloadTimer) {
+    clearTimeout(syncReloadTimer);
+    syncReloadTimer = null;
+  }
+  if (syncChannel) {
+    try {
+      syncChannel.close();
+    } catch (e) {}
+    syncChannel = null;
+  }
 });
 const minDate = ref(dayjs().format('YYYY-MM-DD'));
 
@@ -242,6 +284,20 @@ const setQuickDate = (type) => {
 };
 
 onMounted(() => {
+  try {
+    window.addEventListener('storage', handleStorageSync);
+  } catch (e) {}
+  try {
+    if (typeof BroadcastChannel === 'function') {
+      syncChannel = new BroadcastChannel('just-todo-sync');
+      syncChannel.onmessage = (ev) => {
+        const msg = ev?.data;
+        if (!msg || msg.sourceId === syncInstanceId) return;
+        if (msg.type === 'data-changed') scheduleSyncReload();
+      };
+    }
+  } catch (e) {}
+
   if (window.utools) {
     window.utools.onPluginEnter((action) => {
       console.log('Plugin Enter', action);
@@ -276,7 +332,7 @@ const loadData = () => {
         { id: 'work', name: '工作', sort: 1, icon: 'ri-briefcase-line', color: '#52c41a' },
         { id: 'life', name: '生活', sort: 2, icon: 'ri-home-smile-line', color: '#faad14' }
       ];
-      saveCategories();
+      saveCategories({ silent: true });
     } else {
       // Migration: Add icon and color if missing
       let changed = false;
@@ -295,7 +351,7 @@ const loadData = () => {
         // Fix specific defaults if they are standard ones
         if (c.id === 'default' && c.icon === 'ri-list-check') c.icon = 'ri-file-list-line';
       });
-      if (changed) saveCategories();
+      if (changed) saveCategories({ silent: true });
     }
   } catch (error) {
     console.error('Failed to load data:', error);
@@ -308,12 +364,14 @@ const loadData = () => {
   }
 };
 
-const saveCategories = () => {
+const saveCategories = (opts = {}) => {
   db.saveCategories(JSON.parse(JSON.stringify(categories.value)));
+  if (!opts || !opts.silent) broadcastDataChanged('categories');
 };
 
-const saveTodos = () => {
+const saveTodos = (opts = {}) => {
   db.saveTodos(JSON.parse(JSON.stringify(todos.value)));
+  if (!opts || !opts.silent) broadcastDataChanged('todos');
 };
 
 // Category Actions
@@ -725,6 +783,7 @@ const handleSaveSettings = (newSettings) => {
   currentSettings.notification = newSettings;
   db.saveSettings(currentSettings);
   notificationSettings.value = newSettings;
+  broadcastDataChanged('settings');
   showToast('设置已保存');
 };
 
@@ -733,10 +792,12 @@ const handleSaveBackupSettings = (newSettings) => {
   currentSettings.backup = newSettings;
   db.saveSettings(currentSettings);
   backupSettings.value = newSettings;
+  broadcastDataChanged('backup-settings');
 };
 
 const handleDataRestored = () => {
   loadData();
+  broadcastDataChanged('restore');
   showToast('数据已恢复');
 };
 

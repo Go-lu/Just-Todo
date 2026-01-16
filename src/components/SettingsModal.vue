@@ -341,26 +341,42 @@ const exporting = ref(false);
 const webdavFiles = ref([]);
 const selectedWebdavFileUrl = ref('');
 
-watch(() => props.visible, (newVal) => {
-  if (newVal) {
-    // Merge initial settings with defaults
-    const loaded = props.initialSettings || {};
-    Object.keys(defaultSettings).forEach(key => {
-      form[key] = { ...defaultSettings[key], ...(loaded[key] || {}) };
-      // Ensure arrays/objects are properly initialized if missing
-      if (key === 'webhook') {
-         if (!form.webhook.headers) form.webhook.headers = [];
-      }
-    });
+const hydrateFromProps = () => {
+  const loaded = props.initialSettings || {};
+  Object.keys(defaultSettings).forEach(key => {
+    form[key] = { ...defaultSettings[key], ...(loaded[key] || {}) };
+    if (key === 'webhook') {
+      if (!form.webhook.headers) form.webhook.headers = [];
+    }
+  });
 
-    const loadedBackup = props.initialBackupSettings || {};
-    Object.keys(defaultBackupSettings).forEach(key => {
-      backupForm[key] = { ...defaultBackupSettings[key], ...(loadedBackup[key] || {}) };
-    });
-    webdavFiles.value = [];
-    selectedWebdavFileUrl.value = '';
-  }
+  const loadedBackup = props.initialBackupSettings || {};
+  Object.keys(defaultBackupSettings).forEach(key => {
+    backupForm[key] = { ...defaultBackupSettings[key], ...(loadedBackup[key] || {}) };
+  });
+  webdavFiles.value = [];
+  selectedWebdavFileUrl.value = '';
+};
+
+watch(() => props.visible, (newVal) => {
+  if (newVal) hydrateFromProps();
 });
+
+watch(
+  () => props.initialSettings,
+  () => {
+    if (props.visible) hydrateFromProps();
+  },
+  { deep: true }
+);
+
+watch(
+  () => props.initialBackupSettings,
+  () => {
+    if (props.visible) hydrateFromProps();
+  },
+  { deep: true }
+);
 
 const close = () => {
   emit('update:visible', false);
