@@ -872,7 +872,7 @@ const onOverlayClick = () => {
             </div>
           </div>
 
-          <div class="form-row" v-if="form.repeatRule === 'none'">
+          <div class="form-row date-reminder-row" v-if="form.repeatRule === 'none'">
             <div class="form-col">
               <label>截止日期</label>
               <div class="select-field date-picker-wrapper" @click.stop="openDatePicker">
@@ -1498,6 +1498,24 @@ button.confirm-btn {
 .date-row {
   display: flex;
   gap: 10px;
+}
+
+.date-reminder-row {
+  flex-wrap: wrap;
+
+  .form-col {
+    flex: 1 1 260px;
+    min-width: 260px;
+  }
+}
+
+@media (max-width: 420px) {
+  .date-reminder-row {
+    .form-col {
+      flex-basis: 100%;
+      min-width: 100%;
+    }
+  }
 }
 
 .custom-date-input {
