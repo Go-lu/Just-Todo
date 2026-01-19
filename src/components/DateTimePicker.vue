@@ -7,6 +7,10 @@ const props = defineProps({
     type: [String, Number, Date],
     default: ''
   },
+  size: {
+    type: String,
+    default: 'md'
+  },
   showTime: {
     type: Boolean,
     default: false
@@ -144,7 +148,7 @@ const clear = () => {
 </script>
 
 <template>
-  <div class="datetime-picker">
+  <div class="datetime-picker" :class="{ sm: props.size === 'sm', xs: props.size === 'xs' }">
     <div class="picker-header">
       <button @click="prevMonth" class="nav-btn">&lt;</button>
       <span class="current-month">{{ currentMonth.format('YYYY年 MM月') }}</span>
@@ -196,6 +200,117 @@ const clear = () => {
   user-select: none;
   color: var(--text-color);
   min-width: 280px;
+
+  &.sm {
+    padding: 10px;
+    min-width: 240px;
+    border-radius: 10px;
+
+    .picker-header {
+      margin-bottom: 10px;
+
+      .current-month {
+        font-size: 14px;
+      }
+
+      .nav-btn {
+        padding: 2px 6px;
+      }
+    }
+
+    .week-days {
+      margin-bottom: 6px;
+      font-size: 11px;
+    }
+
+    .calendar-grid {
+      gap: 3px;
+      margin-bottom: 10px;
+
+      .day-cell {
+        height: 26px;
+        font-size: 12px;
+        border-radius: 6px;
+      }
+    }
+
+    .picker-footer {
+      gap: 10px;
+      padding-top: 10px;
+
+      .time-picker {
+        font-size: 12px;
+
+        .time-input {
+          padding: 2px 6px;
+          font-size: 12px;
+        }
+      }
+
+      .actions {
+        button {
+          padding: 4px 10px;
+          font-size: 12px;
+        }
+      }
+    }
+  }
+
+  &.xs {
+    padding: 6px;
+    min-width: 190px;
+    border-radius: 10px;
+
+    .picker-header {
+      margin-bottom: 8px;
+
+      .current-month {
+        font-size: 12px;
+      }
+
+      .nav-btn {
+        padding: 1px 5px;
+        font-size: 12px;
+      }
+    }
+
+    .week-days {
+      margin-bottom: 4px;
+      font-size: 10px;
+    }
+
+    .calendar-grid {
+      gap: 2px;
+      margin-bottom: 8px;
+
+      .day-cell {
+        height: 20px;
+        font-size: 11px;
+        border-radius: 6px;
+      }
+    }
+
+    .picker-footer {
+      gap: 8px;
+      padding-top: 8px;
+
+      .time-picker {
+        font-size: 11px;
+
+        .time-input {
+          padding: 1px 5px;
+          font-size: 11px;
+        }
+      }
+
+      .actions {
+        button {
+          padding: 3px 8px;
+          font-size: 11px;
+        }
+      }
+    }
+  }
 
   .picker-header {
     display: flex;

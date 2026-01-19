@@ -211,11 +211,43 @@ const toggleGroup = (groupId) => {
 const formatRepeatRule = (todo) => {
   if (!todo.repeatRule || todo.repeatRule === 'none') return '';
   const date = todo.dueDate ? dayjs(todo.dueDate) : dayjs();
+
+  const formatWeekDays = (days) => {
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const labels = new Map([
+      [1, '一'],
+      [2, '二'],
+      [3, '三'],
+      [4, '四'],
+      [5, '五'],
+      [6, '六'],
+      [0, '日']
+    ]);
+    const normalized = Array.isArray(days)
+      ? [...new Set(days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6))]
+      : [];
+    normalized.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    return normalized.map(d => labels.get(d)).filter(Boolean).join(',');
+  };
+
+  const formatMonthDays = (days) => {
+    const normalized = Array.isArray(days)
+      ? [...new Set(days.filter(d => Number.isInteger(d) && d >= 1 && d <= 31))]
+      : [];
+    normalized.sort((a, b) => a - b);
+    return normalized.join(',');
+  };
   
   switch (todo.repeatRule) {
     case 'daily': return '每天';
-    case 'weekly': return `每周 (${date.format('dddd')})`;
-    case 'monthly': return `每月 (${date.format('D')}日)`;
+    case 'weekly': {
+      const s = formatWeekDays(todo.repeatWeekDays);
+      return s ? `每周 (${s})` : `每周 (${date.format('dddd')})`;
+    }
+    case 'monthly': {
+      const s = formatMonthDays(todo.repeatMonthDays);
+      return s ? `每月 (${s}日)` : `每月 (${date.format('D')}日)`;
+    }
     case 'yearly': return `每年 (${date.format('MM月DD日')})`;
     default: return todo.repeatRule;
   }

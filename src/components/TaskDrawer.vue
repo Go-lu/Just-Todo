@@ -3,6 +3,7 @@ import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import DateTimePicker from './DateTimePicker.vue';
+import ToggleSwitch from './ToggleSwitch.vue';
 
 const vAutoResize = {
   mounted: (el) => {
@@ -41,7 +42,12 @@ const form = ref({
   categoryId: '',
   priority: 'normal',
   dueDate: '',
+  reminderEnabled: true,
+  remindAt: '',
+  reminderAdvanceMinutes: null,
   repeatRule: 'none',
+  repeatWeekDays: [],
+  repeatMonthDays: [],
   subtasks: [],
   attachments: []
 });
@@ -247,12 +253,48 @@ const getPriorityColor = (p) => {
 
 const repeatOptions = computed(() => {
   const date = form.value.dueDate ? dayjs(form.value.dueDate) : dayjs();
+
+  const formatSelectedWeekDays = (days) => {
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const labels = new Map([
+      [1, '一'],
+      [2, '二'],
+      [3, '三'],
+      [4, '四'],
+      [5, '五'],
+      [6, '六'],
+      [0, '日']
+    ]);
+    const normalized = Array.isArray(days)
+      ? [...new Set(days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6))]
+      : [];
+    normalized.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    return normalized.map(d => labels.get(d)).filter(Boolean).join(',');
+  };
+
+  const formatSelectedMonthDays = (days) => {
+    const normalized = Array.isArray(days)
+      ? [...new Set(days.filter(d => Number.isInteger(d) && d >= 1 && d <= 31))]
+      : [];
+    normalized.sort((a, b) => a - b);
+    return normalized.join(',');
+  };
+
+  const weeklyLabel = (() => {
+    const s = formatSelectedWeekDays(form.value.repeatWeekDays);
+    return s ? `每周 (${s})` : `每周 (${date.format('dddd')})`;
+  })();
+
+  const monthlyLabel = (() => {
+    const s = formatSelectedMonthDays(form.value.repeatMonthDays);
+    return s ? `每月 (${s}日)` : `每月 (${date.format('D')}日)`;
+  })();
   
   return [
     { value: 'none', label: '不重复' },
     { value: 'daily', label: '每天' },
-    { value: 'weekly', label: `每周 (${date.format('dddd')})` },
-    { value: 'monthly', label: `每月 (${date.format('D')}日)` },
+    { value: 'weekly', label: weeklyLabel },
+    { value: 'monthly', label: monthlyLabel },
     { value: 'yearly', label: `每年 (${date.format('MM月DD日')})` }
   ];
 });
@@ -313,6 +355,11 @@ watch(() => props.visible, (val) => {
         history: props.initialData.history ? [...props.initialData.history] : [],
         priority: props.initialData.priority === 'normal' ? 'medium' : (props.initialData.priority || 'medium'),
         repeatRule: props.initialData.repeatRule || 'none',
+        reminderEnabled: props.initialData.reminderEnabled !== false,
+        remindAt: props.initialData.remindAt || '',
+        reminderAdvanceMinutes: typeof props.initialData.reminderAdvanceMinutes === 'number' ? props.initialData.reminderAdvanceMinutes : null,
+        repeatWeekDays: Array.isArray(props.initialData.repeatWeekDays) ? [...props.initialData.repeatWeekDays] : [],
+        repeatMonthDays: Array.isArray(props.initialData.repeatMonthDays) ? [...props.initialData.repeatMonthDays] : [],
         subtasks: props.initialData.subtasks ? JSON.parse(JSON.stringify(props.initialData.subtasks)) : [],
         attachments: props.initialData.attachments ? JSON.parse(JSON.stringify(props.initialData.attachments)) : []
       };
@@ -325,7 +372,12 @@ watch(() => props.visible, (val) => {
         categoryId: props.defaultCategoryId === 'all' || props.defaultCategoryId === 'today' || props.defaultCategoryId === 'urgent' || props.defaultCategoryId === 'plan' ? (props.categories.find(c => c.isDefault)?.id || props.categories[0]?.id) : props.defaultCategoryId,
         priority: 'medium',
         dueDate: props.defaultCategoryId === 'today' ? dayjs().format('YYYY-MM-DD') : '',
+        reminderEnabled: true,
+        remindAt: '',
+        reminderAdvanceMinutes: null,
         repeatRule: 'none',
+        repeatWeekDays: [],
+        repeatMonthDays: [],
         subtasks: [],
         attachments: []
       };
@@ -334,6 +386,7 @@ watch(() => props.visible, (val) => {
 });
 
 const showDatePicker = ref(false);
+const showReminderPicker = ref(false);
 const isDelayAction = ref(false);
 const activeDropdown = ref(null);
 const datePickerContainer = ref(null);
@@ -369,6 +422,11 @@ const openDatePicker = () => {
   showDatePicker.value = true;
 };
 
+const openReminderPicker = () => {
+  activeDropdown.value = null;
+  showReminderPicker.value = true;
+};
+
 const handleDateConfirm = (val) => {
   if (isDelayAction.value) {
       // Add delay history
@@ -390,6 +448,35 @@ const handleDateConfirm = (val) => {
   showDatePicker.value = false;
 };
 
+const handleRemindAtConfirm = (val) => {
+  form.value.remindAt = val;
+  showReminderPicker.value = false;
+};
+
+const getDefaultReminderText = () => {
+  const s = form.value.dueDate || '';
+  if (!s) return '未设置截止日期';
+  if (typeof s === 'string' && s.length === 10) return `${s} 09:00`;
+  return s;
+};
+
+const getRemindAtPlaceholder = () => {
+  const s = form.value.dueDate || '';
+  if (!s) return '先设置截止日期';
+  if (typeof s === 'string' && s.length === 10) return '留空则按 09:00 提醒';
+  return '留空则按截止时间提醒';
+};
+
+const setReminderAdvanceMinutes = (val) => {
+  const raw = typeof val === 'string' ? val.trim() : '';
+  if (!raw) {
+    form.value.reminderAdvanceMinutes = null;
+    return;
+  }
+  const n = Number(raw);
+  form.value.reminderAdvanceMinutes = Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+};
+
 const triggerDelay = () => {
     isDelayAction.value = true;
     showDatePicker.value = true;
@@ -406,18 +493,72 @@ const weekDays = [
   { val: 0, label: '日' }
 ];
 
-const currentWeekDay = computed(() => {
-  if (!form.value.dueDate) return -1;
-  return dayjs(form.value.dueDate).day();
-});
+const normalizeWeekDays = (days) => {
+  const arr = Array.isArray(days) ? days : [];
+  const filtered = arr
+    .map(d => Number(d))
+    .filter(d => Number.isInteger(d) && d >= 0 && d <= 6);
+  return [...new Set(filtered)];
+};
 
-const setWeekDay = (dayIndex) => {
-  const today = dayjs();
-  let target = today.day(dayIndex);
-  if (target.isBefore(today, 'day')) {
-    target = target.add(1, 'week');
+const normalizeMonthDays = (days) => {
+  const arr = Array.isArray(days) ? days : [];
+  const filtered = arr
+    .map(d => Number(d))
+    .filter(d => Number.isInteger(d) && d >= 1 && d <= 31);
+  return [...new Set(filtered)];
+};
+
+const computeNextWeeklyDate = (from, selectedDays) => {
+  const base = from && dayjs.isDayjs(from) ? from.startOf('day') : dayjs().startOf('day');
+  const selected = normalizeWeekDays(selectedDays);
+  if (selected.length === 0) return base.format('YYYY-MM-DD');
+  for (let i = 0; i <= 7; i++) {
+    const candidate = base.add(i, 'day');
+    if (selected.includes(candidate.day())) return candidate.format('YYYY-MM-DD');
   }
-  form.value.dueDate = target.format('YYYY-MM-DD');
+  return base.add(7, 'day').format('YYYY-MM-DD');
+};
+
+const computeNextMonthlyDate = (from, selectedDays) => {
+  const base = from && dayjs.isDayjs(from) ? from.startOf('day') : dayjs().startOf('day');
+  const selected = normalizeMonthDays(selectedDays).sort((a, b) => a - b);
+  if (selected.length === 0) return base.format('YYYY-MM-DD');
+
+  const inMonthCandidate = (monthBase) => {
+    const dim = monthBase.daysInMonth();
+    const baseDay = monthBase.date();
+    const mapped = [...new Set(selected.map(d => Math.min(d, dim)))].sort((a, b) => a - b);
+    for (const d of mapped) {
+      if (d >= baseDay) return monthBase.date(d);
+    }
+    return null;
+  };
+
+  const c1 = inMonthCandidate(base);
+  if (c1) return c1.format('YYYY-MM-DD');
+
+  const nextMonthBase = base.add(1, 'month').startOf('month');
+  const dim2 = nextMonthBase.daysInMonth();
+  const mapped2 = [...new Set(selected.map(d => Math.min(d, dim2)))].sort((a, b) => a - b);
+  return nextMonthBase.date(mapped2[0]).format('YYYY-MM-DD');
+};
+
+const updateDueDateBySelection = () => {
+  if (form.value.repeatRule === 'weekly') {
+    form.value.dueDate = computeNextWeeklyDate(dayjs(), form.value.repeatWeekDays);
+  } else if (form.value.repeatRule === 'monthly') {
+    form.value.dueDate = computeNextMonthlyDate(dayjs(), form.value.repeatMonthDays);
+  }
+};
+
+const toggleWeekDay = (dayIndex) => {
+  const selected = normalizeWeekDays(form.value.repeatWeekDays);
+  const idx = selected.indexOf(dayIndex);
+  if (idx >= 0) selected.splice(idx, 1);
+  else selected.push(dayIndex);
+  form.value.repeatWeekDays = selected;
+  updateDueDateBySelection();
 };
 
 // Monthly: 1-31
@@ -446,38 +587,35 @@ const setYearlyDate = (monthIndex, date) => {
   form.value.dueDate = target.format('YYYY-MM-DD');
 };
 
-const currentMonthDay = computed(() => {
-  if (!form.value.dueDate) return -1;
-  return dayjs(form.value.dueDate).date();
-});
-
-const setMonthDay = (day) => {
-  const today = dayjs();
-  let target = today.date(day);
-  
-  if (target.isBefore(today, 'day')) {
-    target = target.add(1, 'month');
-    const daysInNextMonth = target.daysInMonth();
-    if (day > daysInNextMonth) {
-        target = target.date(daysInNextMonth); 
-    } else {
-        target = target.date(day);
-    }
-  } else {
-      const daysInMonth = today.daysInMonth();
-       if (day > daysInMonth) {
-          target = today.add(1, 'month').date(day); 
-       }
-  }
-  form.value.dueDate = target.format('YYYY-MM-DD');
+const toggleMonthDay = (day) => {
+  const selected = normalizeMonthDays(form.value.repeatMonthDays);
+  const idx = selected.indexOf(day);
+  if (idx >= 0) selected.splice(idx, 1);
+  else selected.push(day);
+  form.value.repeatMonthDays = selected;
+  updateDueDateBySelection();
 };
 
 const drawerContentRef = ref(null);
 
 watch(() => form.value.repeatRule, (newVal) => {
-  if (newVal !== 'none' && !form.value.dueDate) {
-    form.value.dueDate = dayjs().format('YYYY-MM-DD');
+  if (newVal === 'weekly') {
+    const fallback = form.value.dueDate ? dayjs(form.value.dueDate) : dayjs();
+    if (!Array.isArray(form.value.repeatWeekDays) || form.value.repeatWeekDays.length === 0) {
+      form.value.repeatWeekDays = [fallback.day()];
+    }
+    updateDueDateBySelection();
+    return;
   }
+  if (newVal === 'monthly') {
+    const fallback = form.value.dueDate ? dayjs(form.value.dueDate) : dayjs();
+    if (!Array.isArray(form.value.repeatMonthDays) || form.value.repeatMonthDays.length === 0) {
+      form.value.repeatMonthDays = [fallback.date()];
+    }
+    updateDueDateBySelection();
+    return;
+  }
+  if (newVal !== 'none' && !form.value.dueDate) form.value.dueDate = dayjs().format('YYYY-MM-DD');
 });
 
 const onSave = () => {
@@ -683,8 +821,8 @@ const onOverlayClick = () => {
                    v-for="d in weekDays" 
                    :key="d.val" 
                    class="week-btn"
-                   :class="{ active: currentWeekDay === d.val }"
-                   @click="setWeekDay(d.val)"
+                   :class="{ active: Array.isArray(form.repeatWeekDays) && form.repeatWeekDays.includes(d.val) }"
+                   @click="toggleWeekDay(d.val)"
                  >
                    {{ d.label }}
                  </div>
@@ -699,9 +837,17 @@ const onOverlayClick = () => {
             <div class="form-col full-width">
                <label>每月几号</label>
                <div class="month-selector">
-                 <select :value="currentMonthDay" @change="setMonthDay(parseInt($event.target.value))">
-                   <option v-for="d in monthDays" :key="d" :value="d">{{ d }}日</option>
-                 </select>
+                 <div class="month-grid">
+                   <div
+                     v-for="d in monthDays"
+                     :key="d"
+                     class="day-btn"
+                     :class="{ active: Array.isArray(form.repeatMonthDays) && form.repeatMonthDays.includes(d) }"
+                     @click="toggleMonthDay(d)"
+                   >
+                     {{ d }}
+                   </div>
+                 </div>
                </div>
                <div class="hint-text">
                  下次执行日期: {{ form.dueDate }}
@@ -738,6 +884,36 @@ const onOverlayClick = () => {
             <button v-if="initialData && initialData.id" class="delay-btn" @click.stop="triggerDelay" title="延迟操作" style="margin-top:8px;">
               <i class="ri-time-line"></i> 推迟
             </button>
+          </div>
+
+          <div class="form-group no-margin">
+            <div class="reminder-head">
+              <span class="reminder-title">提醒</span>
+              <ToggleSwitch v-model="form.reminderEnabled" />
+            </div>
+            <div v-if="form.reminderEnabled" class="reminder-body">
+              <label>提醒时间</label>
+              <div class="select-field date-picker-wrapper" @click.stop="openReminderPicker">
+                <i class="ri-alarm-line icon-prefix"></i>
+                <span class="field-text">{{ form.remindAt || getRemindAtPlaceholder() }}</span>
+                <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
+                <i class="ri-arrow-down-s-line field-arrow"></i>
+              </div>
+              <div class="hint-text">默认提醒时间：{{ getDefaultReminderText() }}</div>
+
+              <div class="form-row reminder-advance-row">
+                <div class="form-col full-width">
+                  <label>提前提醒 (分钟)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    :value="form.reminderAdvanceMinutes ?? ''"
+                    placeholder="留空使用设置"
+                    @input="setReminderAdvanceMinutes($event.target.value)"
+                  >
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -784,6 +960,7 @@ const onOverlayClick = () => {
       <div class="picker-modal" @click.stop>
          <DateTimePicker 
            :model-value="form.dueDate"
+           size="xs"
            :show-time="true"
            :show-clear="!isDelayAction"
            :min-date="dayjs().format('YYYY-MM-DD')"
@@ -791,6 +968,19 @@ const onOverlayClick = () => {
            @close="showDatePicker = false"
          />
        </div>
+    </div>
+
+    <div v-if="showReminderPicker" class="picker-overlay" @click.self="showReminderPicker = false">
+      <div class="picker-modal" @click.stop>
+        <DateTimePicker
+          :model-value="form.remindAt"
+          size="xs"
+          :show-time="true"
+          :min-date="dayjs().format('YYYY-MM-DD')"
+          @confirm="handleRemindAtConfirm"
+          @close="showReminderPicker = false"
+        />
+      </div>
     </div>
 
     <div v-if="previewVisible" class="preview-overlay" @click.self="closePreview">
@@ -1155,6 +1345,36 @@ const onOverlayClick = () => {
   width: 100px;
 }
 
+.month-selector .month-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.month-selector .day-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.month-selector .day-btn:hover {
+  background: var(--hover-bg);
+}
+
+.month-selector .day-btn.active {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
 .yearly-selector {
   display: flex;
   gap: 10px;
@@ -1172,7 +1392,7 @@ label {
   font-weight: 500;
 }
 
-select, input[type="date"], textarea {
+select, input[type="date"], input[type="number"], textarea {
   padding: 8px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
@@ -1200,6 +1420,30 @@ textarea.auto-resize {
   line-height: 1.5;
   display: block;
   vertical-align: top; 
+}
+
+.reminder-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.reminder-title {
+  font-size: 12px;
+  color: var(--secondary-text);
+  font-weight: 500;
+}
+
+.reminder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reminder-advance-row {
+  margin-top: 6px;
 }
 
 button.cancel-btn {

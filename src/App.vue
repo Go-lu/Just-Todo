@@ -480,7 +480,12 @@ const addTodo = (todoData) => {
     priority: todoData.priority || 'medium',
     createdAt: Date.now(),
     dueDate: todoData.dueDate || null,
+    reminderEnabled: todoData.reminderEnabled !== false,
+    remindAt: todoData.remindAt || null,
+    reminderAdvanceMinutes: typeof todoData.reminderAdvanceMinutes === 'number' ? todoData.reminderAdvanceMinutes : null,
     repeatRule: todoData.repeatRule !== 'none' ? todoData.repeatRule : null,
+    repeatWeekDays: Array.isArray(todoData.repeatWeekDays) ? [...todoData.repeatWeekDays] : [],
+    repeatMonthDays: Array.isArray(todoData.repeatMonthDays) ? [...todoData.repeatMonthDays] : [],
     subtasks: todoData.subtasks || [],
     attachments: todoData.attachments || []
   };
@@ -535,15 +540,23 @@ const updateTodo = (updatedTodo) => {
     if (updatedTodo.isCompleted && !oldTodo.isCompleted && updatedTodo.repeatRule && updatedTodo.repeatRule !== 'none') {
       shouldRecur = true;
     }
-    
-    todos.value[index] = {
+
+    const merged = {
       ...oldTodo,
       ...updatedTodo,
       attachments: updatedTodo.attachments !== undefined ? updatedTodo.attachments : (oldTodo.attachments || [])
     };
 
+    const oldTriggerKey = `${oldTodo.reminderEnabled !== false ? 1 : 0}|${oldTodo.remindAt || ''}|${oldTodo.dueDate || ''}|${typeof oldTodo.reminderAdvanceMinutes === 'number' ? oldTodo.reminderAdvanceMinutes : ''}`;
+    const newTriggerKey = `${merged.reminderEnabled !== false ? 1 : 0}|${merged.remindAt || ''}|${merged.dueDate || ''}|${typeof merged.reminderAdvanceMinutes === 'number' ? merged.reminderAdvanceMinutes : ''}`;
+    if (oldTriggerKey !== newTriggerKey) {
+      try { notifiedTasks.value.delete(merged.id); } catch (e) {}
+    }
+    
+    todos.value[index] = merged;
+
     if (shouldRecur) {
-      handleRecurrence(updatedTodo);
+      handleRecurrence(merged);
     }
 
     saveTodos();
@@ -559,21 +572,82 @@ const handleRecurrence = (todo) => {
   let baseDate = todo.dueDate ? dayjs(todo.dueDate) : dayjs();
   let nextDate;
 
-  switch (todo.repeatRule) {
-    case 'daily': 
-      nextDate = baseDate.add(1, 'day'); 
-      break;
-    case 'weekly': 
-      nextDate = baseDate.add(1, 'week'); 
-      break;
-    case 'monthly': 
-      nextDate = baseDate.add(1, 'month'); 
-      break;
-    case 'yearly': 
-      nextDate = baseDate.add(1, 'year'); 
-      break;
-    default:
-      return;
+  const normalizeWeekDays = (days) => {
+    const arr = Array.isArray(days) ? days : [];
+    const filtered = arr
+      .map(d => Number(d))
+      .filter(d => Number.isInteger(d) && d >= 0 && d <= 6);
+    return [...new Set(filtered)];
+  };
+
+  const normalizeMonthDays = (days) => {
+    const arr = Array.isArray(days) ? days : [];
+    const filtered = arr
+      .map(d => Number(d))
+      .filter(d => Number.isInteger(d) && d >= 1 && d <= 31);
+    return [...new Set(filtered)];
+  };
+
+  if (todo.repeatRule === 'weekly') {
+    const selected = normalizeWeekDays(todo.repeatWeekDays);
+    if (selected.length > 0) {
+      const start = baseDate.add(1, 'day').startOf('day');
+      for (let i = 0; i <= 7; i++) {
+        const candidate = start.add(i, 'day');
+        if (selected.includes(candidate.day())) {
+          nextDate = candidate;
+          break;
+        }
+      }
+      if (!nextDate) nextDate = start.add(7, 'day');
+    } else {
+      nextDate = baseDate.add(1, 'week');
+    }
+  } else if (todo.repeatRule === 'monthly') {
+    const selected = normalizeMonthDays(todo.repeatMonthDays).sort((a, b) => a - b);
+    if (selected.length > 0) {
+      const start = baseDate.add(1, 'day').startOf('day');
+      const inMonthCandidate = (monthBase) => {
+        const dim = monthBase.daysInMonth();
+        const baseDay = monthBase.date();
+        const mapped = [...new Set(selected.map(d => Math.min(d, dim)))].sort((a, b) => a - b);
+        for (const d of mapped) {
+          if (d >= baseDay) return monthBase.date(d);
+        }
+        return null;
+      };
+
+      const c1 = inMonthCandidate(start);
+      if (c1) nextDate = c1;
+      else {
+        const nextMonthBase = start.add(1, 'month').startOf('month');
+        const dim2 = nextMonthBase.daysInMonth();
+        const mapped2 = [...new Set(selected.map(d => Math.min(d, dim2)))].sort((a, b) => a - b);
+        nextDate = nextMonthBase.date(mapped2[0]);
+      }
+    } else {
+      nextDate = baseDate.add(1, 'month');
+    }
+  } else {
+    switch (todo.repeatRule) {
+      case 'daily':
+        nextDate = baseDate.add(1, 'day');
+        break;
+      case 'yearly':
+        nextDate = baseDate.add(1, 'year');
+        break;
+      default:
+        nextDate = baseDate.add(1, 'day');
+    }
+  }
+
+  let nextRemindAt = todo.remindAt || null;
+  if (todo.remindAt && todo.dueDate) {
+    const r = dayjs(todo.remindAt);
+    const baseDue = dayjs(todo.dueDate);
+    if (r.isValid() && baseDue.isValid() && r.format('YYYY-MM-DD') === baseDue.format('YYYY-MM-DD')) {
+      nextRemindAt = nextDate.hour(r.hour()).minute(r.minute()).second(0).format('YYYY-MM-DD HH:mm');
+    }
   }
 
   const newTodo = {
@@ -583,6 +657,7 @@ const handleRecurrence = (todo) => {
     isCompleted: false,
     priority: todo.priority || 'normal',
     dueDate: nextDate.format('YYYY-MM-DD'),
+    remindAt: nextRemindAt,
     createdAt: Date.now(),
     completedAt: null,
     history: []
@@ -609,21 +684,28 @@ const checkNotifications = () => {
   const now = dayjs();
   
   todos.value.forEach(todo => {
-    if (todo.isCompleted || !todo.dueDate) return;
+    if (todo.isCompleted) return;
+    if (todo.reminderEnabled === false) return;
+    const baseTimeStr = todo.remindAt || todo.dueDate;
+    if (!baseTimeStr) return;
     if (notifiedTasks.value.has(todo.id)) return;
     
     // Determine trigger time
-    let dueTime = dayjs(todo.dueDate);
-    if (todo.dueDate.length === 10) {
+    let dueTime = dayjs(baseTimeStr);
+    if (typeof baseTimeStr === 'string' && baseTimeStr.length === 10) {
       dueTime = dueTime.hour(9).minute(0).second(0);
     }
     
-    // Advance time (General settings > Desktop settings > 0)
+    // Advance time
     let advance = 0;
-    if (settings.general && typeof settings.general.advanceMinutes === 'number') {
-      advance = settings.general.advanceMinutes;
-    } else if (settings.desktop && settings.desktop.advanceMinutes) {
-      advance = settings.desktop.advanceMinutes;
+    if (typeof todo.reminderAdvanceMinutes === 'number') {
+      advance = todo.reminderAdvanceMinutes;
+    } else if (!todo.remindAt) {
+      if (settings.general && typeof settings.general.advanceMinutes === 'number') {
+        advance = settings.general.advanceMinutes;
+      } else if (settings.desktop && settings.desktop.advanceMinutes) {
+        advance = settings.desktop.advanceMinutes;
+      }
     }
     
     const triggerTime = dueTime.subtract(advance, 'minute');
@@ -954,11 +1036,42 @@ const testEmail = async (config) => {
 
 const getRepeatLabel = (rule, item) => {
   const date = item && item.dueDate ? dayjs(item.dueDate) : dayjs();
+  const formatWeekDays = (days) => {
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const labels = new Map([
+      [1, '一'],
+      [2, '二'],
+      [3, '三'],
+      [4, '四'],
+      [5, '五'],
+      [6, '六'],
+      [0, '日']
+    ]);
+    const normalized = Array.isArray(days)
+      ? [...new Set(days.filter(d => Number.isInteger(d) && d >= 0 && d <= 6))]
+      : [];
+    normalized.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    return normalized.map(d => labels.get(d)).filter(Boolean).join(',');
+  };
+
+  const formatMonthDays = (days) => {
+    const normalized = Array.isArray(days)
+      ? [...new Set(days.filter(d => Number.isInteger(d) && d >= 1 && d <= 31))]
+      : [];
+    normalized.sort((a, b) => a - b);
+    return normalized.join(',');
+  };
   switch(rule) {
     case 'none': return '不重复';
     case 'daily': return '每日';
-    case 'weekly': return `每周 (${date.format('dddd')})`;
-    case 'monthly': return `每月 (${date.format('D')}日)`;
+    case 'weekly': {
+      const s = item ? formatWeekDays(item.repeatWeekDays) : '';
+      return s ? `每周 (${s})` : `每周 (${date.format('dddd')})`;
+    }
+    case 'monthly': {
+      const s = item ? formatMonthDays(item.repeatMonthDays) : '';
+      return s ? `每月 (${s}日)` : `每月 (${date.format('D')}日)`;
+    }
     case 'yearly': return `每年 (${date.format('MM月D日')})`;
     default: return rule;
   }
@@ -2134,6 +2247,7 @@ const showExportContextMenu = (event) => {
     <div v-if="datePickerModal.visible" class="modal-overlay" @click.self="datePickerModal.visible = false">
       <DateTimePicker 
         :model-value="datePickerModal.date"
+        size="xs"
         :show-time="true"
         :min-date="minDate"
         @confirm="handleDateConfirm"
