@@ -872,21 +872,47 @@ const onOverlayClick = () => {
             </div>
           </div>
 
-          <div class="form-group no-margin" v-if="form.repeatRule === 'none'">
-            <label>截止日期</label>
-            <div class="select-field date-picker-wrapper" @click.stop="openDatePicker">
-              <i class="ri-calendar-line icon-prefix"></i>
-              <span class="field-text">{{ form.dueDate || '设置截止日期' }}</span>
-              <i v-if="form.dueDate" class="ri-close-circle-fill clear-btn" @click.stop="form.dueDate = ''"></i>
-              <i class="ri-arrow-down-s-line field-arrow"></i>
+          <div class="form-row" v-if="form.repeatRule === 'none'">
+            <div class="form-col">
+              <label>截止日期</label>
+              <div class="select-field date-picker-wrapper" @click.stop="openDatePicker">
+                <i class="ri-calendar-line icon-prefix"></i>
+                <span class="field-text">{{ form.dueDate || '设置截止日期' }}</span>
+                <i v-if="form.dueDate" class="ri-close-circle-fill clear-btn" @click.stop="form.dueDate = ''"></i>
+                <i class="ri-arrow-down-s-line field-arrow"></i>
+              </div>
+              <button v-if="initialData && initialData.id" class="delay-btn" @click.stop="triggerDelay" title="延迟操作" style="margin-top:8px;">
+                <i class="ri-time-line"></i> 推迟
+              </button>
             </div>
-            <!-- Delay Button -->
-            <button v-if="initialData && initialData.id" class="delay-btn" @click.stop="triggerDelay" title="延迟操作" style="margin-top:8px;">
-              <i class="ri-time-line"></i> 推迟
-            </button>
+
+            <div class="form-col">
+              <div class="reminder-head">
+                <span class="reminder-title">提醒时间</span>
+                <ToggleSwitch v-model="form.reminderEnabled" />
+              </div>
+              <div class="select-field date-picker-wrapper" :class="{ disabled: !form.reminderEnabled }" @click.stop="form.reminderEnabled ? openReminderPicker() : null">
+                <i class="ri-alarm-line icon-prefix"></i>
+                <span class="field-text">{{ form.remindAt || getRemindAtPlaceholder() }}</span>
+                <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
+                <i class="ri-arrow-down-s-line field-arrow"></i>
+              </div>
+              <div class="hint-text">默认提醒时间：{{ getDefaultReminderText() }}</div>
+
+              <div class="reminder-advance-row" v-if="form.reminderEnabled">
+                <label>提前提醒 (分钟)</label>
+                <input
+                  type="number"
+                  min="0"
+                  :value="form.reminderAdvanceMinutes ?? ''"
+                  placeholder="留空使用设置"
+                  @input="setReminderAdvanceMinutes($event.target.value)"
+                >
+              </div>
+            </div>
           </div>
 
-          <div class="form-group no-margin">
+          <div class="form-group no-margin" v-if="form.repeatRule !== 'none'">
             <div class="reminder-head">
               <span class="reminder-title">提醒</span>
               <ToggleSwitch v-model="form.reminderEnabled" />
@@ -901,17 +927,15 @@ const onOverlayClick = () => {
               </div>
               <div class="hint-text">默认提醒时间：{{ getDefaultReminderText() }}</div>
 
-              <div class="form-row reminder-advance-row">
-                <div class="form-col full-width">
-                  <label>提前提醒 (分钟)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    :value="form.reminderAdvanceMinutes ?? ''"
-                    placeholder="留空使用设置"
-                    @input="setReminderAdvanceMinutes($event.target.value)"
-                  >
-                </div>
+              <div class="reminder-advance-row">
+                <label>提前提醒 (分钟)</label>
+                <input
+                  type="number"
+                  min="0"
+                  :value="form.reminderAdvanceMinutes ?? ''"
+                  placeholder="留空使用设置"
+                  @input="setReminderAdvanceMinutes($event.target.value)"
+                >
               </div>
             </div>
           </div>
@@ -960,7 +984,6 @@ const onOverlayClick = () => {
       <div class="picker-modal" @click.stop>
          <DateTimePicker 
            :model-value="form.dueDate"
-           size="xs"
            :show-time="true"
            :show-clear="!isDelayAction"
            :min-date="dayjs().format('YYYY-MM-DD')"
@@ -974,7 +997,6 @@ const onOverlayClick = () => {
       <div class="picker-modal" @click.stop>
         <DateTimePicker
           :model-value="form.remindAt"
-          size="xs"
           :show-time="true"
           :min-date="dayjs().format('YYYY-MM-DD')"
           @confirm="handleRemindAtConfirm"
@@ -1256,6 +1278,11 @@ const onOverlayClick = () => {
   &:hover {
     border-color: var(--primary-color);
   }
+}
+
+.select-field.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .field-text {

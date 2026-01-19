@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, watch, computed, nextTick, onUnmounted } from 'vue';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import DateTimePicker from './DateTimePicker.vue';
@@ -39,9 +39,11 @@ const emit = defineEmits(['update:visible', 'save']);
 const contentInput = ref(null);
 const datePickerContainer = ref(null);
 const reminderPickerContainer = ref(null);
+const dueTriggerRef = ref(null);
 const remindAtTriggerRef = ref(null);
-const remindAtPopoverStyle = ref({});
+const floatingPickerRef = ref(null);
 const activeDropdown = ref(null);
+const floatingPickerStyle = ref({});
 
 const toggleDropdown = (name) => {
   if (activeDropdown.value === name) {
@@ -55,32 +57,59 @@ const closeDropdowns = () => {
   activeDropdown.value = null;
 };
 
-const updateRemindAtPopoverStyle = () => {
-  if (activeDropdown.value !== 'remindAt') return;
-  const el = remindAtTriggerRef.value;
-  if (!el) return;
-  const rect = el.getBoundingClientRect();
-  const padding = 8;
-  const minWidth = 190;
-  const width = Math.max(Math.round(rect.width), minWidth);
-  let left = Math.round(rect.left);
-  const maxLeft = Math.max(padding, window.innerWidth - width - padding);
-  if (left > maxLeft) left = maxLeft;
-  if (left < padding) left = padding;
+let cleanupFloatingListeners = null;
 
-  const approxHeight = 300;
-  let top = Math.round(rect.bottom + 8);
-  if (top + approxHeight + padding > window.innerHeight) {
-    top = Math.max(padding, Math.round(rect.top - approxHeight - 8));
-  }
+const updateFloatingPickerPosition = async () => {
+  if (activeDropdown.value !== 'date' && activeDropdown.value !== 'remindAt') return;
+  const triggerEl = activeDropdown.value === 'date' ? dueTriggerRef.value : remindAtTriggerRef.value;
+  if (!triggerEl || typeof triggerEl.getBoundingClientRect !== 'function') return;
 
-  remindAtPopoverStyle.value = {
+  const rect = triggerEl.getBoundingClientRect();
+  const viewportPadding = 8;
+  const gap = 6;
+
+  let width = Math.max(rect.width || 0, 0);
+  width = Math.min(width, window.innerWidth - viewportPadding * 2);
+
+  let left = rect.left;
+  if (left + width > window.innerWidth - viewportPadding) left = window.innerWidth - viewportPadding - width;
+  if (left < viewportPadding) left = viewportPadding;
+
+  let top = rect.bottom + gap;
+  floatingPickerStyle.value = {
     position: 'fixed',
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `${width}px`,
-    zIndex: 2001
+    zIndex: 5000,
+    left: `${Math.round(left)}px`,
+    top: `${Math.round(top)}px`,
+    width: `${Math.round(width)}px`,
+    maxHeight: `${Math.max(120, Math.round(window.innerHeight - viewportPadding - top))}px`,
+    overflowY: 'auto',
+    overflowX: 'hidden'
   };
+
+  await nextTick();
+  const popEl = floatingPickerRef.value;
+  if (!popEl || typeof popEl.getBoundingClientRect !== 'function') return;
+
+  const popRect = popEl.getBoundingClientRect();
+  if (popRect.bottom > window.innerHeight - viewportPadding) {
+    const aboveTop = rect.top - popRect.height - gap;
+    const maxHeightAbove = Math.max(120, Math.round(rect.top - viewportPadding - gap));
+    if (aboveTop >= viewportPadding) {
+      floatingPickerStyle.value = {
+        ...floatingPickerStyle.value,
+        top: `${Math.round(aboveTop)}px`,
+        maxHeight: `${maxHeightAbove}px`
+      };
+    } else {
+      const clampedTop = Math.max(viewportPadding, Math.round(window.innerHeight - viewportPadding - popRect.height));
+      floatingPickerStyle.value = {
+        ...floatingPickerStyle.value,
+        top: `${clampedTop}px`,
+        maxHeight: `${Math.max(120, Math.round(window.innerHeight - viewportPadding - clampedTop))}px`
+      };
+    }
+  }
 };
 
 // Auto scroll to date picker when opened
@@ -101,19 +130,32 @@ watch(() => activeDropdown.value, (val) => {
       }
     });
   }
-  if (val === 'remindAt') {
-    nextTick(updateRemindAtPopoverStyle);
+
+  if (cleanupFloatingListeners) {
+    cleanupFloatingListeners();
+    cleanupFloatingListeners = null;
+  }
+
+  if (val === 'date' || val === 'remindAt') {
+    nextTick(() => {
+      updateFloatingPickerPosition();
+
+      const modalBox = document.querySelector('.modal-box.task-modal');
+      const onScroll = () => updateFloatingPickerPosition();
+      const onResize = () => updateFloatingPickerPosition();
+      modalBox?.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', onResize);
+
+      cleanupFloatingListeners = () => {
+        modalBox?.removeEventListener('scroll', onScroll);
+        window.removeEventListener('resize', onResize);
+      };
+    });
   }
 });
 
-onMounted(() => {
-  window.addEventListener('resize', updateRemindAtPopoverStyle, true);
-  window.addEventListener('scroll', updateRemindAtPopoverStyle, true);
-});
-
 onUnmounted(() => {
-  window.removeEventListener('resize', updateRemindAtPopoverStyle, true);
-  window.removeEventListener('scroll', updateRemindAtPopoverStyle, true);
+  if (cleanupFloatingListeners) cleanupFloatingListeners();
 });
 
 const form = ref({
@@ -812,71 +854,38 @@ const onClose = () => {
           </div>
         </div>
 
-        <div class="form-group no-margin" v-if="form.repeatRule === 'none'" ref="datePickerContainer">
-          <label>截止日期</label>
-          <div class="select-field date-picker-wrapper" :class="{ open: activeDropdown === 'date' }" @click.stop="toggleDropdown('date')">
-             <i class="ri-calendar-line icon-prefix"></i>
-             <span class="field-text">{{ form.dueDate || '选择日期时间' }}</span>
-             <i v-if="form.dueDate" class="ri-close-circle-fill clear-btn" @click.stop="form.dueDate = ''"></i>
-             <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'date' }"></i>
-          </div>
-          <transition name="slide-pull">
-            <div class="dropdown-panel" v-if="activeDropdown === 'date'" @click.stop>
-              <DateTimePicker 
-                :model-value="form.dueDate"
-                  size="xs"
-                :show-time="true"
-                :min-date="dayjs().format('YYYY-MM-DD')"
-                @confirm="handleDateConfirm"
-                @close="activeDropdown = null"
-              />
+        <div class="form-row" v-if="form.repeatRule === 'none'">
+          <div class="form-col" ref="datePickerContainer">
+            <label>截止日期</label>
+            <div ref="dueTriggerRef" class="select-field date-picker-wrapper" :class="{ open: activeDropdown === 'date' }" @click.stop="toggleDropdown('date')">
+               <i class="ri-calendar-line icon-prefix"></i>
+               <span class="field-text">{{ form.dueDate || '选择日期时间' }}</span>
+               <i v-if="form.dueDate" class="ri-close-circle-fill clear-btn" @click.stop="form.dueDate = ''"></i>
+               <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'date' }"></i>
             </div>
-          </transition>
-        </div>
-
-        <div class="form-group no-margin" ref="reminderPickerContainer">
-          <div class="reminder-head">
-            <span class="reminder-title">提醒</span>
-            <ToggleSwitch v-model="form.reminderEnabled" />
           </div>
-          <div v-if="form.reminderEnabled" class="reminder-body">
-            <label>提醒时间</label>
-            <div ref="remindAtTriggerRef" class="select-field date-picker-wrapper" :class="{ open: activeDropdown === 'remindAt' }" @click.stop="toggleDropdown('remindAt')">
+
+          <div class="form-col" ref="reminderPickerContainer">
+            <div class="inline-label-row">
+              <label>提醒时间</label>
+              <ToggleSwitch v-model="form.reminderEnabled" />
+            </div>
+            <div ref="remindAtTriggerRef" class="select-field date-picker-wrapper" :class="{ open: activeDropdown === 'remindAt', disabled: !form.reminderEnabled }" @click.stop="form.reminderEnabled ? toggleDropdown('remindAt') : null">
               <i class="ri-alarm-line icon-prefix"></i>
               <span class="field-text">{{ form.remindAt || getRemindAtPlaceholder() }}</span>
               <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
               <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'remindAt' }"></i>
             </div>
             <div class="hint-text">默认提醒时间：{{ getDefaultReminderText() }}</div>
-            <teleport to="body">
-              <div
-                v-if="activeDropdown === 'remindAt'"
-                class="floating-picker-popover"
-                :style="remindAtPopoverStyle"
-                @click.stop
+            <div class="reminder-advance-row" v-if="form.reminderEnabled">
+              <label>提前提醒 (分钟)</label>
+              <input
+                type="number"
+                min="0"
+                :value="form.reminderAdvanceMinutes ?? ''"
+                placeholder="留空使用设置"
+                @input="setReminderAdvanceMinutes($event.target.value)"
               >
-                <DateTimePicker
-                  :model-value="form.remindAt"
-                  size="xs"
-                  :show-time="true"
-                  :min-date="dayjs().format('YYYY-MM-DD')"
-                  @confirm="handleRemindAtConfirm"
-                  @close="activeDropdown = null"
-                />
-              </div>
-            </teleport>
-
-            <div class="form-row reminder-advance-row">
-              <div class="form-col full-width">
-                <label>提前提醒 (分钟)</label>
-                <input
-                  type="number"
-                  min="0"
-                  :value="form.reminderAdvanceMinutes ?? ''"
-                  placeholder="留空使用设置"
-                  @input="setReminderAdvanceMinutes($event.target.value)"
-                >
-              </div>
             </div>
           </div>
         </div>
@@ -897,6 +906,35 @@ const onClose = () => {
       <!-- Mask for dropdowns -->
       <div v-if="activeDropdown" class="dropdown-mask" @click="closeDropdowns"></div>
     </div>
+
+    <Teleport to="body">
+      <transition name="slide-pull">
+        <div
+          v-if="activeDropdown === 'date' || activeDropdown === 'remindAt'"
+          ref="floatingPickerRef"
+          class="floating-picker-popover"
+          :style="floatingPickerStyle"
+          @click.stop
+        >
+          <DateTimePicker 
+            v-if="activeDropdown === 'date'"
+            :model-value="form.dueDate"
+            :show-time="true"
+            :min-date="dayjs().format('YYYY-MM-DD')"
+            @confirm="handleDateConfirm"
+            @close="activeDropdown = null"
+          />
+          <DateTimePicker
+            v-else
+            :model-value="form.remindAt"
+            :show-time="true"
+            :min-date="dayjs().format('YYYY-MM-DD')"
+            @confirm="handleRemindAtConfirm"
+            @close="activeDropdown = null"
+          />
+        </div>
+      </transition>
+    </Teleport>
 
     <!-- Preview Modal -->
     <div v-if="previewVisible" class="preview-overlay" @click.self="closePreview">
@@ -992,6 +1030,68 @@ const onClose = () => {
 
 .floating-picker-popover {
   pointer-events: auto;
+  z-index: 5000;
+}
+
+.floating-picker-popover :deep(.datetime-picker) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0 !important;
+  padding: 10px;
+  border-radius: 10px;
+
+  .picker-header {
+    margin-bottom: 10px;
+
+    .current-month {
+      font-size: 14px;
+    }
+
+    .nav-btn {
+      padding: 2px 6px;
+    }
+  }
+
+  .week-days {
+    margin-bottom: 6px;
+    font-size: 11px;
+  }
+
+  .calendar-grid {
+    gap: 3px;
+    margin-bottom: 10px;
+
+    .day-cell {
+      height: 26px;
+      font-size: 12px;
+      border-radius: 6px;
+    }
+  }
+
+  .picker-footer {
+    gap: 10px;
+    padding-top: 10px;
+
+    .time-picker {
+      font-size: 12px;
+
+      label {
+        font-size: 12px;
+      }
+
+      .time-input {
+        padding: 2px 6px;
+        font-size: 12px;
+      }
+    }
+
+    .actions {
+      button {
+        padding: 4px 10px;
+        font-size: 12px;
+      }
+    }
+  }
 }
 
 
@@ -1033,6 +1133,24 @@ h3 {
     &.full-width {
       flex: 0 0 100%;
     }
+  }
+}
+
+.inline-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.select-field.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 520px) {
+  .form-row {
+    flex-direction: column;
   }
 }
 

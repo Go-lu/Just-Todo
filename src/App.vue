@@ -2247,7 +2247,6 @@ const showExportContextMenu = (event) => {
     <div v-if="datePickerModal.visible" class="modal-overlay" @click.self="datePickerModal.visible = false">
       <DateTimePicker 
         :model-value="datePickerModal.date"
-        size="xs"
         :show-time="true"
         :min-date="minDate"
         @confirm="handleDateConfirm"
