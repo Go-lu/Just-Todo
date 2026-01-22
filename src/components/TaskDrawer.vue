@@ -46,7 +46,7 @@ const form = ref({
   categoryId: '',
   priority: 'normal',
   dueDate: '',
-  reminderEnabled: true,
+  reminderEnabled: false,
   remindAt: '',
   reminderAdvanceMinutes: null,
   notifyChannels: [],
@@ -354,7 +354,7 @@ const getEventIcon = (type) => {
 
 watch(() => props.visible, (val) => {
   if (val) {
-    if (props.initialData && Object.keys(props.initialData).length > 0) {
+    if (props.initialData && props.initialData.id) {
       form.value = {
         ...props.initialData,
         history: props.initialData.history ? [...props.initialData.history] : [],
@@ -371,22 +371,23 @@ watch(() => props.visible, (val) => {
       };
     } else {
       // New Task
+      const seed = (props.initialData && typeof props.initialData === 'object') ? props.initialData : {};
       form.value = {
         content: '',
         description: '',
         isCompleted: false,
-        categoryId: props.defaultCategoryId === 'all' || props.defaultCategoryId === 'today' || props.defaultCategoryId === 'urgent' || props.defaultCategoryId === 'plan' ? (props.categories.find(c => c.isDefault)?.id || props.categories[0]?.id) : props.defaultCategoryId,
-        priority: 'medium',
-        dueDate: props.defaultCategoryId === 'today' ? dayjs().format('YYYY-MM-DD') : '',
-        reminderEnabled: true,
-        remindAt: '',
-        reminderAdvanceMinutes: null,
-        notifyChannels: [],
-        repeatRule: 'none',
-        repeatWeekDays: [],
-        repeatMonthDays: [],
-        subtasks: [],
-        attachments: []
+        categoryId: seed.categoryId || (props.defaultCategoryId === 'all' || props.defaultCategoryId === 'today' || props.defaultCategoryId === 'urgent' || props.defaultCategoryId === 'plan' ? (props.categories.find(c => c.isDefault)?.id || props.categories[0]?.id) : props.defaultCategoryId),
+        priority: seed.priority === 'normal' ? 'medium' : (seed.priority || 'low'),
+        dueDate: seed.dueDate || (props.defaultCategoryId === 'today' ? dayjs().format('YYYY-MM-DD') : ''),
+        reminderEnabled: typeof seed.reminderEnabled === 'boolean' ? seed.reminderEnabled : false,
+        remindAt: seed.remindAt || '',
+        reminderAdvanceMinutes: typeof seed.reminderAdvanceMinutes === 'number' ? seed.reminderAdvanceMinutes : null,
+        notifyChannels: Array.isArray(seed.notifyChannels) ? [...seed.notifyChannels] : [],
+        repeatRule: seed.repeatRule || 'none',
+        repeatWeekDays: Array.isArray(seed.repeatWeekDays) ? [...seed.repeatWeekDays] : [],
+        repeatMonthDays: Array.isArray(seed.repeatMonthDays) ? [...seed.repeatMonthDays] : [],
+        subtasks: seed.subtasks ? JSON.parse(JSON.stringify(seed.subtasks)) : [],
+        attachments: seed.attachments ? JSON.parse(JSON.stringify(seed.attachments)) : []
       };
     }
   }
@@ -666,15 +667,90 @@ const onSave = () => {
 };
 
 const onClose = () => {
-  emit('update:visible', false);
+  if (isFormChanged()) onSave();
+  else emit('update:visible', false);
+};
+
+const isFormChanged = () => {
+  if (!props.initialData || !props.initialData.id) {
+    return !!(form.value.content && form.value.content.trim());
+  }
+  const normalizeRepeatRule = (val) => {
+    if (!val) return '';
+    return val === 'none' ? '' : val;
+  };
+  const normalizePriority = (val) => {
+    const v = (val || '').toString();
+    if (v === 'normal') return 'medium';
+    return v || 'medium';
+  };
+  const normalizeNotifyChannels = (arr) => {
+    const list = Array.isArray(arr) ? arr : [];
+    return [...new Set(list.filter(Boolean))].sort().join('|');
+  };
+  const normalizeNumberList = (arr) => {
+    const list = Array.isArray(arr) ? arr : [];
+    return list
+      .map(v => Number(v))
+      .filter(v => Number.isFinite(v))
+      .sort((a, b) => a - b)
+      .join(',');
+  };
+  const normalizeSubtasks = (arr) => {
+    const list = Array.isArray(arr) ? arr : [];
+    return JSON.stringify(list.map(s => ({
+      id: s?.id || '',
+      content: (s?.content || '').toString().trim(),
+      isCompleted: !!s?.isCompleted
+    })));
+  };
+  const normalizeAttachments = (arr) => {
+    const list = Array.isArray(arr) ? arr : [];
+    return JSON.stringify(list.map(a => ({
+      id: a?.id || '',
+      name: (a?.name || '').toString(),
+      size: Number(a?.size) || 0,
+      mimeType: (a?.mimeType || '').toString()
+    })));
+  };
+  const oldKey = [
+    (props.initialData.content || '').toString(),
+    (props.initialData.description || '').toString(),
+    (props.initialData.categoryId || '').toString(),
+    normalizePriority(props.initialData.priority),
+    (props.initialData.dueDate || '').toString(),
+    String(props.initialData.reminderEnabled !== false ? 1 : 0),
+    (props.initialData.remindAt || '').toString(),
+    String(typeof props.initialData.reminderAdvanceMinutes === 'number' ? props.initialData.reminderAdvanceMinutes : ''),
+    normalizeNotifyChannels(props.initialData.notifyChannels),
+    normalizeRepeatRule(props.initialData.repeatRule),
+    normalizeNumberList(props.initialData.repeatWeekDays),
+    normalizeNumberList(props.initialData.repeatMonthDays),
+    normalizeSubtasks(props.initialData.subtasks),
+    normalizeAttachments(props.initialData.attachments)
+  ].join('||');
+  const newKey = [
+    (form.value.content || '').toString(),
+    (form.value.description || '').toString(),
+    (form.value.categoryId || '').toString(),
+    normalizePriority(form.value.priority),
+    (form.value.dueDate || '').toString(),
+    String(form.value.reminderEnabled !== false ? 1 : 0),
+    (form.value.remindAt || '').toString(),
+    String(typeof form.value.reminderAdvanceMinutes === 'number' ? form.value.reminderAdvanceMinutes : ''),
+    normalizeNotifyChannels(form.value.notifyChannels),
+    normalizeRepeatRule(form.value.repeatRule),
+    normalizeNumberList(form.value.repeatWeekDays),
+    normalizeNumberList(form.value.repeatMonthDays),
+    normalizeSubtasks(form.value.subtasks),
+    normalizeAttachments(form.value.attachments)
+  ].join('||');
+  return oldKey !== newKey;
 };
 
 const onOverlayClick = () => {
-  if (form.value.content && form.value.content.trim()) {
-    onSave();
-  } else {
-    onClose();
-  }
+  if (isFormChanged()) onSave();
+  else onClose();
 };
 </script>
 

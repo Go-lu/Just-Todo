@@ -351,11 +351,11 @@ const currentTodos = computed(() => {
   if (currentCategoryId.value === 'all') {
     filtered = todos.value.filter(t => !t.isCompleted);
   } else if (currentCategoryId.value === 'today') {
-    filtered = todos.value.filter(t => !t.isCompleted && t.dueDate && dayjs(t.dueDate).isSameOrBefore(dayjs(), 'day'));
+    filtered = todos.value.filter(t => !t.isCompleted && t.dueDate && dayjs(t.dueDate).isSame(dayjs(), 'day'));
   } else if (currentCategoryId.value === 'plan') {
     filtered = todos.value.filter(t => !t.isCompleted && t.dueDate && dayjs(t.dueDate).isAfter(dayjs(), 'day'));
   } else if (currentCategoryId.value === 'urgent') {
-    filtered = todos.value.filter(t => !t.isCompleted && (t.priority === 'high' || t.priority === 'medium' || t.priority === 'low'));
+    filtered = todos.value.filter(t => !t.isCompleted && (t.priority === 'high' || t.priority === 'medium'));
   } else if (currentCategoryId.value === 'completed') {
     filtered = todos.value.filter(t => t.isCompleted);
   } else {

@@ -310,10 +310,10 @@ const displayGroups = computed(() => {
 
     list.forEach(t => {
       if (!t || !t.id) return;
-      if (!t.isCompleted && t.dueDate && dayjs(t.dueDate).isSameOrBefore(now, 'day')) {
+      if (!t.isCompleted && t.dueDate && dayjs(t.dueDate).isSame(now, 'day')) {
         todayItems.push(t);
       }
-      if (!t.isCompleted && (t.priority === 'high' || t.priority === 'medium' || t.priority === 'low')) {
+      if (!t.isCompleted && (t.priority === 'high' || t.priority === 'medium')) {
         urgentItems.push(t);
       }
     });

@@ -168,7 +168,7 @@ const form = ref({
   categoryId: '',
   priority: 'normal',
   dueDate: '',
-  reminderEnabled: true,
+  reminderEnabled: false,
   remindAt: '',
   reminderAdvanceMinutes: null,
   notifyChannels: [],
@@ -447,7 +447,7 @@ watch(() => props.visible, (val) => {
     nextTick(() => {
       if (contentInput.value) contentInput.value.focus();
     });
-    if (props.initialData && Object.keys(props.initialData).length > 0) {
+    if (props.initialData && props.initialData.id) {
       form.value = {
         ...props.initialData,
         priority: props.initialData.priority === 'normal' ? 'medium' : (props.initialData.priority || 'medium'),
@@ -463,21 +463,22 @@ watch(() => props.visible, (val) => {
       };
     } else {
       // New Task
+      const seed = (props.initialData && typeof props.initialData === 'object') ? props.initialData : {};
       form.value = {
         content: '',
         description: '',
-        categoryId: props.defaultCategoryId === 'all' || props.defaultCategoryId === 'today' || props.defaultCategoryId === 'urgent' || props.defaultCategoryId === 'plan' ? (props.categories.find(c => c.isDefault)?.id || props.categories[0]?.id) : props.defaultCategoryId,
-        priority: 'medium',
-        dueDate: props.defaultCategoryId === 'today' ? dayjs().format('YYYY-MM-DD') : '',
-        reminderEnabled: true,
-        remindAt: '',
-        reminderAdvanceMinutes: null,
-        notifyChannels: [],
-        repeatRule: 'none',
-        repeatWeekDays: [],
-        repeatMonthDays: [],
-        subtasks: [],
-        attachments: []
+        categoryId: seed.categoryId || (props.defaultCategoryId === 'all' || props.defaultCategoryId === 'today' || props.defaultCategoryId === 'urgent' || props.defaultCategoryId === 'plan' ? (props.categories.find(c => c.isDefault)?.id || props.categories[0]?.id) : props.defaultCategoryId),
+        priority: seed.priority === 'normal' ? 'medium' : (seed.priority || 'low'),
+        dueDate: seed.dueDate || (props.defaultCategoryId === 'today' ? dayjs().format('YYYY-MM-DD') : ''),
+        reminderEnabled: typeof seed.reminderEnabled === 'boolean' ? seed.reminderEnabled : false,
+        remindAt: seed.remindAt || '',
+        reminderAdvanceMinutes: typeof seed.reminderAdvanceMinutes === 'number' ? seed.reminderAdvanceMinutes : null,
+        notifyChannels: Array.isArray(seed.notifyChannels) ? [...seed.notifyChannels] : [],
+        repeatRule: seed.repeatRule || 'none',
+        repeatWeekDays: Array.isArray(seed.repeatWeekDays) ? [...seed.repeatWeekDays] : [],
+        repeatMonthDays: Array.isArray(seed.repeatMonthDays) ? [...seed.repeatMonthDays] : [],
+        subtasks: seed.subtasks ? JSON.parse(JSON.stringify(seed.subtasks)) : [],
+        attachments: seed.attachments ? JSON.parse(JSON.stringify(seed.attachments)) : []
       };
     }
   }

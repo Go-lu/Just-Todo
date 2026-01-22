@@ -54,7 +54,7 @@ const getSmartCount = (type) => {
     return props.todos.filter(t => !t.isCompleted && t.dueDate && dayjs(t.dueDate).isAfter(dayjs(), 'day')).length;
   }
   if (type === 'urgent') {
-    return props.todos.filter(t => !t.isCompleted && (t.priority === 'high' || t.priority === 'medium' || t.priority === 'low')).length;
+    return props.todos.filter(t => !t.isCompleted && (t.priority === 'high' || t.priority === 'medium')).length;
   }
   if (type === 'completed') {
     return props.todos.filter(t => t.isCompleted).length;
