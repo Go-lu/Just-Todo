@@ -51,6 +51,45 @@ const enabledNotifyChannels = computed(() => {
   return candidates.filter(key => !!settings?.[key]?.enabled);
 });
 const notifiedTasks = ref(new Set());
+const NOTIFIED_CACHE_KEY = '__justtodo_notified_cache_v1__';
+const notifiedCache = ref({});
+const loadNotifiedCache = () => {
+  try {
+    const raw = localStorage.getItem(NOTIFIED_CACHE_KEY);
+    if (!raw) {
+      notifiedCache.value = {};
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      notifiedCache.value = {};
+      return;
+    }
+    notifiedCache.value = parsed;
+  } catch (e) {
+    notifiedCache.value = {};
+  }
+};
+const saveNotifiedCache = () => {
+  try {
+    localStorage.setItem(NOTIFIED_CACHE_KEY, JSON.stringify(notifiedCache.value || {}));
+  } catch (e) {}
+};
+const parseTriggerBaseTime = (baseTimeStr) => {
+  if (!baseTimeStr) return null;
+  if (typeof baseTimeStr === 'string') {
+    const s = baseTimeStr.trim();
+    if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return dayjs(s).hour(9).minute(0).second(0);
+    if (/^\d{2}:\d{2}$/.test(s)) {
+      const [hh, mm] = s.split(':').map(v => Number(v));
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+      return dayjs().hour(hh).minute(mm).second(0);
+    }
+    return dayjs(s);
+  }
+  return dayjs(baseTimeStr);
+};
 let notificationTimer = null;
 let stickyWindowInstance = null;
 const syncInstanceId = uuidv4();
@@ -327,6 +366,7 @@ onMounted(() => {
   document.addEventListener('click', closeContextMenu);
   
   // Start Notification Scheduler
+  loadNotifiedCache();
   checkNotifications(); // Check immediately
   notificationTimer = setInterval(checkNotifications, 60000);
 });
@@ -526,9 +566,44 @@ const updateTodo = (updatedTodo) => {
   const index = todos.value.findIndex(t => t.id === updatedTodo.id);
   if (index !== -1) {
     const oldTodo = todos.value[index];
+    const completionTransition = !!updatedTodo.isCompleted && !oldTodo.isCompleted;
+    const uncompletionTransition = !updatedTodo.isCompleted && !!oldTodo.isCompleted;
+    const normalizeRepeatRule = (val) => {
+      if (!val) return null;
+      return val === 'none' ? null : val;
+    };
+    const normalizeNotifyChannels = (arr) => {
+      const list = Array.isArray(arr) ? arr : [];
+      return [...new Set(list.filter(Boolean))].sort().join('|');
+    };
+    const normalizeNumberList = (arr) => {
+      const list = Array.isArray(arr) ? arr : [];
+      return list
+        .map(v => Number(v))
+        .filter(v => Number.isFinite(v))
+        .sort((a, b) => a - b)
+        .join(',');
+    };
+    const normalizeSubtasks = (arr) => {
+      const list = Array.isArray(arr) ? arr : [];
+      return JSON.stringify(list.map(s => ({
+        id: s?.id || '',
+        content: (s?.content || '').toString(),
+        isCompleted: !!s?.isCompleted
+      })));
+    };
+    const normalizeAttachments = (arr) => {
+      const list = Array.isArray(arr) ? arr : [];
+      return JSON.stringify(list.map(a => ({
+        id: a?.id || '',
+        name: (a?.name || '').toString(),
+        size: Number(a?.size) || 0,
+        mimeType: (a?.mimeType || '').toString()
+      })));
+    };
     
     // Update completedAt timestamp
-    if (updatedTodo.isCompleted && !oldTodo.isCompleted) {
+    if (completionTransition) {
       updatedTodo.completedAt = Date.now();
       if (!updatedTodo.history) updatedTodo.history = [];
       updatedTodo.history.push({ type: 'complete', timestamp: Date.now() });
@@ -545,16 +620,10 @@ const updateTodo = (updatedTodo) => {
           });
         })
         .catch(() => {});
-    } else if (!updatedTodo.isCompleted && oldTodo.isCompleted) {
+    } else if (uncompletionTransition) {
       updatedTodo.completedAt = null;
       if (!updatedTodo.history) updatedTodo.history = [];
       updatedTodo.history.push({ type: 'uncomplete', timestamp: Date.now() });
-    }
-
-    // Check completion for recurrence
-    let shouldRecur = false;
-    if (updatedTodo.isCompleted && !oldTodo.isCompleted && updatedTodo.repeatRule && updatedTodo.repeatRule !== 'none') {
-      shouldRecur = true;
     }
 
     const merged = {
@@ -562,6 +631,60 @@ const updateTodo = (updatedTodo) => {
       ...updatedTodo,
       attachments: updatedTodo.attachments !== undefined ? updatedTodo.attachments : (oldTodo.attachments || [])
     };
+    merged.repeatRule = normalizeRepeatRule(merged.repeatRule);
+
+    const oldKey = [
+      (oldTodo.content || '').toString(),
+      (oldTodo.description || '').toString(),
+      (oldTodo.categoryId || '').toString(),
+      (oldTodo.priority || '').toString(),
+      (oldTodo.dueDate || '').toString(),
+      String(oldTodo.reminderEnabled !== false ? 1 : 0),
+      (oldTodo.remindAt || '').toString(),
+      String(typeof oldTodo.reminderAdvanceMinutes === 'number' ? oldTodo.reminderAdvanceMinutes : ''),
+      normalizeNotifyChannels(oldTodo.notifyChannels),
+      (normalizeRepeatRule(oldTodo.repeatRule) || '').toString(),
+      normalizeNumberList(oldTodo.repeatWeekDays),
+      normalizeNumberList(oldTodo.repeatMonthDays),
+      normalizeSubtasks(oldTodo.subtasks),
+      normalizeAttachments(oldTodo.attachments)
+    ].join('||');
+
+    const newKey = [
+      (merged.content || '').toString(),
+      (merged.description || '').toString(),
+      (merged.categoryId || '').toString(),
+      (merged.priority || '').toString(),
+      (merged.dueDate || '').toString(),
+      String(merged.reminderEnabled !== false ? 1 : 0),
+      (merged.remindAt || '').toString(),
+      String(typeof merged.reminderAdvanceMinutes === 'number' ? merged.reminderAdvanceMinutes : ''),
+      normalizeNotifyChannels(merged.notifyChannels),
+      (merged.repeatRule || '').toString(),
+      normalizeNumberList(merged.repeatWeekDays),
+      normalizeNumberList(merged.repeatMonthDays),
+      normalizeSubtasks(merged.subtasks),
+      normalizeAttachments(merged.attachments)
+    ].join('||');
+
+    const changed = oldKey !== newKey;
+    if (changed && !completionTransition && !uncompletionTransition) {
+      const nowMs = Date.now();
+      const historyList = Array.isArray(merged.history) ? merged.history : [];
+      const last = historyList.length > 0 ? historyList[historyList.length - 1] : null;
+      const lastType = last?.type || '';
+      const lastTs = Number(last?.timestamp) || 0;
+      const skipUpdate = (lastType === 'delay' || lastType === 'recurrence') && lastTs && nowMs - lastTs < 3000;
+      const recentUpdate = lastType === 'update' && lastTs && nowMs - lastTs < 3000;
+      if (!skipUpdate && !recentUpdate) {
+        historyList.push({ type: 'update', timestamp: nowMs });
+        merged.history = historyList;
+      } else if (!Array.isArray(merged.history)) {
+        merged.history = historyList;
+      }
+    }
+
+    const shouldRecur = completionTransition && !!merged.repeatRule;
 
     const oldTriggerKey = `${oldTodo.reminderEnabled !== false ? 1 : 0}|${oldTodo.remindAt || ''}|${oldTodo.dueDate || ''}|${typeof oldTodo.reminderAdvanceMinutes === 'number' ? oldTodo.reminderAdvanceMinutes : ''}`;
     const newTriggerKey = `${merged.reminderEnabled !== false ? 1 : 0}|${merged.remindAt || ''}|${merged.dueDate || ''}|${typeof merged.reminderAdvanceMinutes === 'number' ? merged.reminderAdvanceMinutes : ''}`;
@@ -698,6 +821,32 @@ const checkNotifications = () => {
   if (!settings) return;
   
   const now = dayjs();
+  const nowMs = now.valueOf();
+  const ttlMs = 7 * 24 * 60 * 60 * 1000;
+  let dirty = false;
+
+  const cache = (notifiedCache.value && typeof notifiedCache.value === 'object' && !Array.isArray(notifiedCache.value))
+    ? notifiedCache.value
+    : {};
+
+  const existingIds = new Set((Array.isArray(todos.value) ? todos.value : []).map(t => t?.id).filter(Boolean));
+  for (const id of Object.keys(cache)) {
+    if (!existingIds.has(id)) {
+      delete cache[id];
+      dirty = true;
+      continue;
+    }
+    const entry = cache[id];
+    const updatedAt = Number(entry?.updatedAt);
+    const triggerAt = Number(entry?.triggerAt);
+    const ts = Number.isFinite(updatedAt) && updatedAt > 0
+      ? updatedAt
+      : (Number.isFinite(triggerAt) && triggerAt > 0 ? triggerAt : 0);
+    if (ts && nowMs - ts > ttlMs) {
+      delete cache[id];
+      dirty = true;
+    }
+  }
   
   todos.value.forEach(todo => {
     if (todo.isCompleted) return;
@@ -707,10 +856,8 @@ const checkNotifications = () => {
     if (notifiedTasks.value.has(todo.id)) return;
     
     // Determine trigger time
-    let dueTime = dayjs(baseTimeStr);
-    if (typeof baseTimeStr === 'string' && baseTimeStr.length === 10) {
-      dueTime = dueTime.hour(9).minute(0).second(0);
-    }
+    const dueTime = parseTriggerBaseTime(baseTimeStr);
+    if (!dueTime || !dueTime.isValid()) return;
     
     // Advance time
     let advance = 0;
@@ -725,18 +872,36 @@ const checkNotifications = () => {
     }
     
     const triggerTime = dueTime.subtract(advance, 'minute');
+    if (!triggerTime || !triggerTime.isValid()) return;
+    const triggerAtMs = triggerTime.valueOf();
+    const cachedTriggerAt = Number(cache?.[todo.id]?.triggerAt);
+    if (Number.isFinite(cachedTriggerAt) && cachedTriggerAt === triggerAtMs) {
+      notifiedTasks.value.add(todo.id);
+      return;
+    }
     
     if (now.isSameOrAfter(triggerTime)) {
        const diff = now.diff(triggerTime, 'minute');
        if (diff >= 0 && diff < 60) { // Notify if within 1 hour of due/trigger time
          sendNotification(todo);
          notifiedTasks.value.add(todo.id);
+         cache[todo.id] = { triggerAt: triggerAtMs, updatedAt: nowMs };
+         dirty = true;
        } else if (diff >= 60) {
          // Mark as notified to avoid spam for old tasks
          notifiedTasks.value.add(todo.id);
+         cache[todo.id] = { triggerAt: triggerAtMs, updatedAt: nowMs };
+         dirty = true;
        }
     }
   });
+
+  if (dirty) {
+    notifiedCache.value = cache;
+    saveNotifiedCache();
+  } else {
+    notifiedCache.value = cache;
+  }
 };
 
 const sendNotification = async (todo) => {

@@ -253,6 +253,12 @@ const formatRepeatRule = (todo) => {
   }
 };
 
+const hasUpdateHistory = (todo) => {
+  const history = todo?.history;
+  if (!Array.isArray(history) || history.length === 0) return false;
+  return history.some(e => e && e.type === 'update');
+};
+
 const getSubtaskProgress = (todo) => {
   if (!todo.subtasks || todo.subtasks.length === 0) return null;
   const completed = todo.subtasks.filter(s => s.isCompleted).length;
@@ -747,7 +753,7 @@ const leave = (el) => {
                           {{ element.priority === 'high' ? '高' : element.priority === 'medium' ? '中' : '低' }}
                         </span>
                       </div>
-                      <div class="meta" v-if="element.dueDate || element.repeatRule || element.description || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
+                      <div class="meta" v-if="element.dueDate || element.repeatRule || element.description || hasUpdateHistory(element) || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
                          <span v-if="element.description" class="meta-tag has-desc" title="有备注">
                            <i class="ri-sticky-note-line"></i>
                          </span>
@@ -762,6 +768,9 @@ const leave = (el) => {
                          </span>
                          <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
                            <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
+                         </span>
+                         <span v-if="hasUpdateHistory(element)" class="meta-tag">
+                           <i class="ri-edit-line"></i> 已修改
                          </span>
                          <span v-if="element.repeatRule" class="meta-tag">
                            <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
@@ -848,7 +857,7 @@ const leave = (el) => {
                        {{ element.priority === 'high' ? '高' : element.priority === 'medium' ? '中' : '低' }}
                      </span>
                    </div>
-                   <div class="meta" v-if="element.dueDate || element.repeatRule || element.description || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
+                   <div class="meta" v-if="element.dueDate || element.repeatRule || element.description || hasUpdateHistory(element) || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
                          <span v-if="element.description" class="meta-tag has-desc" title="有备注">
                            <i class="ri-sticky-note-line"></i>
                          </span>
@@ -862,6 +871,9 @@ const leave = (el) => {
                  </span>
                      <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
                        <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
+                     </span>
+                     <span v-if="hasUpdateHistory(element)" class="meta-tag">
+                       <i class="ri-edit-line"></i> 已修改
                      </span>
                      <span v-if="element.repeatRule && !element.isCompleted" class="meta-tag">
                        <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
