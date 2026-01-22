@@ -31,10 +31,14 @@ const props = defineProps({
   defaultCategoryId: {
     type: String,
     default: 'default'
+  },
+  enabledNotifyChannels: {
+    type: Array,
+    default: null
   }
 });
 
-const emit = defineEmits(['update:visible', 'save']);
+const emit = defineEmits(['update:visible', 'save', 'toast']);
 
 const contentInput = ref(null);
 const datePickerContainer = ref(null);
@@ -167,6 +171,7 @@ const form = ref({
   reminderEnabled: true,
   remindAt: '',
   reminderAdvanceMinutes: null,
+  notifyChannels: [],
   repeatRule: 'none',
   repeatWeekDays: [],
   repeatMonthDays: [],
@@ -393,6 +398,50 @@ const getRepeatLabelFromOptions = (val) => {
   return opt ? opt.label : '';
 };
 
+const allNotifyChannelOptions = [
+  { value: 'desktop', label: '桌面' },
+  { value: 'email', label: '邮件' },
+  { value: 'bark', label: 'Bark' },
+  { value: 'webhook', label: 'Webhook' }
+];
+
+const notifyChannelOptions = computed(() => {
+  if (!Array.isArray(props.enabledNotifyChannels)) return allNotifyChannelOptions;
+  const allowed = new Set(props.enabledNotifyChannels.filter(Boolean));
+  return allNotifyChannelOptions.filter(opt => allowed.has(opt.value));
+});
+
+const hasNotifyChannels = computed(() => Array.isArray(form.value.notifyChannels) && form.value.notifyChannels.length > 0);
+
+const notifyChannelsText = computed(() => {
+  const selected = Array.isArray(form.value.notifyChannels) ? form.value.notifyChannels : [];
+  const map = new Map(allNotifyChannelOptions.map(o => [o.value, o.label]));
+  const labels = [...new Set(selected.filter(v => map.has(v)))].map(v => map.get(v));
+  if (labels.length > 0) return labels.join('、');
+  return form.value.reminderEnabled ? '请选择' : '未开启提醒';
+});
+
+const toggleNotifyChannel = (val) => {
+  if (!form.value.reminderEnabled) return;
+  const current = Array.isArray(form.value.notifyChannels) ? [...form.value.notifyChannels] : [];
+  if (current.includes(val)) {
+    form.value.notifyChannels = current.filter(v => v !== val);
+  } else {
+    form.value.notifyChannels = [...current, val];
+  }
+};
+
+const clearNotifyChannels = () => {
+  form.value.notifyChannels = [];
+};
+
+watch(() => form.value.reminderEnabled, (enabled) => {
+  if (enabled) return;
+  if (activeDropdown.value === 'remindAt' || activeDropdown.value === 'notifyChannels') {
+    activeDropdown.value = null;
+  }
+});
+
 watch(() => props.visible, (val) => {
   if (val) {
     nextTick(() => {
@@ -406,6 +455,7 @@ watch(() => props.visible, (val) => {
         reminderEnabled: props.initialData.reminderEnabled !== false,
         remindAt: props.initialData.remindAt || '',
         reminderAdvanceMinutes: typeof props.initialData.reminderAdvanceMinutes === 'number' ? props.initialData.reminderAdvanceMinutes : null,
+        notifyChannels: Array.isArray(props.initialData.notifyChannels) ? [...props.initialData.notifyChannels] : [],
         repeatWeekDays: Array.isArray(props.initialData.repeatWeekDays) ? [...props.initialData.repeatWeekDays] : [],
         repeatMonthDays: Array.isArray(props.initialData.repeatMonthDays) ? [...props.initialData.repeatMonthDays] : [],
         subtasks: props.initialData.subtasks ? JSON.parse(JSON.stringify(props.initialData.subtasks)) : [],
@@ -422,6 +472,7 @@ watch(() => props.visible, (val) => {
         reminderEnabled: true,
         remindAt: '',
         reminderAdvanceMinutes: null,
+        notifyChannels: [],
         repeatRule: 'none',
         repeatWeekDays: [],
         repeatMonthDays: [],
@@ -430,7 +481,7 @@ watch(() => props.visible, (val) => {
       };
     }
   }
-});
+}, { immediate: true });
 
 const showDatePicker = ref(false);
 
@@ -611,6 +662,13 @@ watch(() => form.value.repeatRule, (newVal) => {
 
 const onSave = () => {
   if (!form.value.content.trim()) return;
+  if (form.value.reminderEnabled) {
+    const selected = Array.isArray(form.value.notifyChannels) ? form.value.notifyChannels.filter(Boolean) : [];
+    if (selected.length === 0) {
+      emit('toast', { message: '请选择至少一个通知渠道', type: 'error' });
+      return;
+    }
+  }
   const cleanedSubtasks = Array.isArray(form.value.subtasks)
     ? form.value.subtasks.filter(s => s && typeof s.content === 'string' && s.content.trim() !== '')
     : [];
@@ -633,6 +691,9 @@ const onClose = () => {
       <h3>{{ initialData && initialData.id ? '编辑任务' : '新建任务' }}</h3>
       
       <div class="section-card task-main-card">
+        <div class="task-content-label">
+          <span>任务内容</span><span class="required-mark">*</span>
+        </div>
         <div class="task-header-row">
           <textarea 
             ref="contentInput"
@@ -854,9 +915,12 @@ const onClose = () => {
           </div>
         </div>
 
-        <div class="form-row" v-if="form.repeatRule === 'none'">
+        <div class="form-row date-reminder-row">
           <div class="form-col" ref="datePickerContainer">
-            <label>截止日期</label>
+            <div class="inline-label-row">
+              <label>截止日期</label>
+              <span class="switch-placeholder"></span>
+            </div>
             <div ref="dueTriggerRef" class="select-field date-picker-wrapper" :class="{ open: activeDropdown === 'date' }" @click.stop="toggleDropdown('date')">
                <i class="ri-calendar-line icon-prefix"></i>
                <span class="field-text">{{ form.dueDate || '选择日期时间' }}</span>
@@ -876,17 +940,49 @@ const onClose = () => {
               <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
               <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'remindAt' }"></i>
             </div>
-            <div class="hint-text">默认提醒时间：{{ getDefaultReminderText() }}</div>
-            <div class="reminder-advance-row" v-if="form.reminderEnabled">
-              <label>提前提醒 (分钟)</label>
-              <input
-                type="number"
-                min="0"
-                :value="form.reminderAdvanceMinutes ?? ''"
-                placeholder="留空使用设置"
-                @input="setReminderAdvanceMinutes($event.target.value)"
-              >
+          </div>
+        </div>
+
+        <div class="form-row reminder-meta-row" v-if="form.reminderEnabled">
+          <div class="form-col">
+            <div class="meta-label-row">
+              <label>通知渠道<span class="required-mark">*</span></label>
+              <span v-if="!hasNotifyChannels" class="meta-follow-hint">未选择</span>
             </div>
+            <div
+              class="select-field notify-select"
+              :class="{ open: activeDropdown === 'notifyChannels' }"
+              @click.stop="toggleDropdown('notifyChannels')"
+            >
+              <span class="field-text">{{ notifyChannelsText }}</span>
+              <i v-if="hasNotifyChannels" class="ri-close-circle-fill clear-btn" @click.stop="clearNotifyChannels"></i>
+              <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'notifyChannels' }"></i>
+              <transition name="slide-pull">
+                <div class="dropdown-panel notify-dropdown-panel" v-show="activeDropdown === 'notifyChannels'" @click.stop>
+                  <div
+                    v-for="opt in notifyChannelOptions"
+                    :key="opt.value"
+                    class="dropdown-item notify-item"
+                    :class="{ selected: Array.isArray(form.notifyChannels) && form.notifyChannels.includes(opt.value) }"
+                    @click.stop="toggleNotifyChannel(opt.value)"
+                  >
+                    <i class="ri-check-line check-icon"></i>
+                    <span>{{ opt.label }}</span>
+                  </div>
+                </div>
+              </transition>
+            </div>
+          </div>
+          <div class="form-col">
+            <label>提前提醒 (分钟)</label>
+            <input
+              type="number"
+              min="0"
+              :value="form.reminderAdvanceMinutes ?? ''"
+              placeholder="留空使用设置"
+              @input="setReminderAdvanceMinutes($event.target.value)"
+            >
+            <div class="hint-text reminder-default-hint">默认提醒时间：{{ getDefaultReminderText() }}</div>
           </div>
         </div>
       </div>
@@ -1136,11 +1232,33 @@ h3 {
   }
 }
 
+.date-reminder-row {
+  align-items: flex-start;
+}
+
+.reminder-meta-row {
+  margin-top: -6px;
+}
+
 .inline-label-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.switch-placeholder {
+  width: 34px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.notify-dropdown-panel {
+  top: calc(100% + 2px);
+}
+
+.reminder-default-hint {
+  margin-top: 8px;
 }
 
 .select-field.disabled {
@@ -1150,6 +1268,9 @@ h3 {
 
 @media (max-width: 520px) {
   .form-row {
+    flex-direction: column;
+  }
+  .form-meta-row {
     flex-direction: column;
   }
 }
@@ -1226,6 +1347,64 @@ h3 {
   font-size: 12px;
   color: var(--secondary-text);
   margin-top: 5px;
+}
+
+.form-meta-row {
+  display: flex;
+  gap: 15px;
+  margin-top: -6px;
+  margin-bottom: 15px;
+  align-items: flex-start;
+
+  .meta-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    position: relative;
+  }
+
+  .meta-right {
+    justify-content: flex-start;
+  }
+
+  .hint-text {
+    margin-top: 0;
+  }
+}
+
+.notify-select .field-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meta-follow-hint {
+  font-size: 12px;
+  color: var(--secondary-text);
+}
+
+.dropdown-item.notify-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .check-icon {
+    width: 16px;
+    opacity: 0;
+  }
+
+  &.selected {
+    .check-icon {
+      opacity: 1;
+    }
+  }
 }
 
 label {
@@ -1788,6 +1967,21 @@ textarea {
   resize: none;
   overflow: hidden;
   height: auto;
+}
+
+.task-content-label {
+  font-size: 12px;
+  color: var(--secondary-text);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.required-mark {
+  color: var(--danger-color);
+  line-height: 1;
 }
 
 .subtask-input {

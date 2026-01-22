@@ -45,6 +45,11 @@ const taskDrawer = ref({
 const settingsVisible = ref(false);
 const notificationSettings = ref({});
 const backupSettings = ref({});
+const enabledNotifyChannels = computed(() => {
+  const settings = notificationSettings.value || {};
+  const candidates = ['desktop', 'email', 'bark', 'webhook'];
+  return candidates.filter(key => !!settings?.[key]?.enabled);
+});
 const notifiedTasks = ref(new Set());
 let notificationTimer = null;
 let stickyWindowInstance = null;
@@ -469,6 +474,16 @@ const handleTaskSave = (taskData) => {
   }
 };
 
+const handleTaskToast = (payload) => {
+  if (payload && typeof payload === 'object') {
+    const message = payload.message || '';
+    const type = payload.type || 'success';
+    if (message) showToast(message, type);
+    return;
+  }
+  if (typeof payload === 'string' && payload) showToast(payload, 'error');
+};
+
 // Todo Actions
 const addTodo = (todoData) => {
   const newTodo = {
@@ -483,6 +498,7 @@ const addTodo = (todoData) => {
     reminderEnabled: todoData.reminderEnabled !== false,
     remindAt: todoData.remindAt || null,
     reminderAdvanceMinutes: typeof todoData.reminderAdvanceMinutes === 'number' ? todoData.reminderAdvanceMinutes : null,
+    notifyChannels: Array.isArray(todoData.notifyChannels) ? [...new Set(todoData.notifyChannels.filter(Boolean))] : [],
     repeatRule: todoData.repeatRule !== 'none' ? todoData.repeatRule : null,
     repeatWeekDays: Array.isArray(todoData.repeatWeekDays) ? [...todoData.repeatWeekDays] : [],
     repeatMonthDays: Array.isArray(todoData.repeatMonthDays) ? [...todoData.repeatMonthDays] : [],
@@ -727,9 +743,13 @@ const sendNotification = async (todo) => {
   const settings = notificationSettings.value;
   const title = '待办提醒';
   const body = `任务 "${todo.content}" 即将到期`;
+  const selectedChannels = Array.isArray(todo?.notifyChannels) ? todo.notifyChannels.filter(Boolean) : [];
+  if (selectedChannels.length === 0) return;
+  const channelSet = new Set(selectedChannels);
+  const allowChannel = (key) => channelSet.has(key);
   
   // Desktop
-  if (settings.desktop?.enabled) {
+  if (allowChannel('desktop')) {
     const options = { 
       body, 
       requireInteraction: true // Requires user interaction to close
@@ -763,7 +783,7 @@ const sendNotification = async (todo) => {
   }
   
   // Bark
-  if (settings.bark?.enabled && settings.bark.serverUrl) {
+  if (allowChannel('bark') && settings.bark?.serverUrl) {
     try {
       const baseUrl = settings.bark.serverUrl.endsWith('/') ? settings.bark.serverUrl : settings.bark.serverUrl + '/';
       const params = new URLSearchParams();
@@ -779,7 +799,7 @@ const sendNotification = async (todo) => {
   }
   
   // Webhook
-  if (settings.webhook?.enabled && settings.webhook.url) {
+  if (allowChannel('webhook') && settings.webhook?.url) {
     try {
         const method = settings.webhook.method || 'POST';
         const headers = {};
@@ -840,7 +860,7 @@ const sendNotification = async (todo) => {
   }
   
   // Email
-  if (settings.email?.enabled) {
+  if (allowChannel('email') && settings.email) {
     notifyEmail(settings.email, title, body);
   }
 };
@@ -2125,8 +2145,10 @@ const showExportContextMenu = (event) => {
       :categories="categories"
       :initial-data="taskDrawer.initialData"
       :default-category-id="currentCategoryId"
+      :enabled-notify-channels="enabledNotifyChannels"
       @save="handleDrawerSave"
       @delay="handleDrawerDelay"
+      @toast="handleTaskToast"
     />
 
     <SettingsModal
@@ -2256,11 +2278,14 @@ const showExportContextMenu = (event) => {
 
     <!-- Task Modal -->
     <TaskModal
+      v-if="taskModal.visible"
       v-model:visible="taskModal.visible"
       :categories="categories"
       :initial-data="taskModal.initialData"
       :default-category-id="currentCategoryId"
+      :enabled-notify-channels="enabledNotifyChannels"
       @save="handleTaskSave"
+      @toast="handleTaskToast"
     />
 
     <Toast

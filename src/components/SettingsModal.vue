@@ -12,202 +12,191 @@
         <div class="tabs">
           <div 
             class="tab-item" 
-            :class="{ active: currentTab === 'desktop' }"
-            @click="currentTab = 'desktop'"
+            :class="{ active: currentTab === 'notification' }"
+            @click="currentTab = 'notification'"
           >
-            <i class="ri-computer-line"></i> 桌面通知
-          </div>
-          <div 
-            class="tab-item" 
-            :class="{ active: currentTab === 'email' }"
-            @click="currentTab = 'email'"
-          >
-            <i class="ri-mail-line"></i> 邮件
-          </div>
-          <div 
-            class="tab-item" 
-            :class="{ active: currentTab === 'bark' }"
-            @click="currentTab = 'bark'"
-          >
-            <i class="ri-notification-badge-line"></i> Bark
-          </div>
-          <div 
-            class="tab-item" 
-            :class="{ active: currentTab === 'webhook' }"
-            @click="currentTab = 'webhook'"
-          >
-            <i class="ri-links-line"></i> Webhook
+            <i class="ri-notification-3-line"></i> 通知管理
           </div>
           <div 
             class="tab-item" 
             :class="{ active: currentTab === 'data' }"
             @click="currentTab = 'data'"
           >
-            <i class="ri-database-2-line"></i> 数据
+            <i class="ri-database-2-line"></i> 数据管理
           </div>
         </div>
 
         <div class="tab-content">
-          <!-- Desktop Settings -->
-          <div v-if="currentTab === 'desktop'" class="settings-panel">
-            <div class="form-group">
-              <label class="switch-label">
-                <span>启用桌面通知</span>
-                <input type="checkbox" v-model="form.desktop.enabled">
-                <span class="slider"></span>
-              </label>
-            </div>
-            <div class="form-group">
-              <label>提前提醒时间 (分钟)</label>
-              <input type="number" v-model.number="form.desktop.advanceMinutes" min="0" placeholder="0 表示准时提醒">
-              <small>设置在任务截止时间前多少分钟进行提醒</small>
-            </div>
-            <div class="form-group">
-              <button class="test-btn" @click="testDesktop" :disabled="!form.desktop.enabled">
-                <i class="ri-flask-line"></i> 测试桌面通知
-              </button>
-            </div>
-          </div>
-
-          <!-- Email Settings -->
-          <div v-if="currentTab === 'email'" class="settings-panel">
-            <div class="form-group">
-              <label class="switch-label">
-                <span>启用邮件通知</span>
-                <input type="checkbox" v-model="form.email.enabled">
-                <span class="slider"></span>
-              </label>
-            </div>
-            <div class="form-group">
-              <label>发送人邮箱别名</label>
-              <input type="text" v-model="form.email.alias" placeholder="JustTodo 提醒">
-            </div>
-            <div class="form-group">
-              <label>发送人邮箱</label>
-              <input type="text" v-model="form.email.user" placeholder="your_email@example.com">
-            </div>
-            <div class="form-group">
-              <label>SMTP 密码 / 授权码</label>
-              <input type="password" v-model="form.email.pass" placeholder="Password or App Token">
-            </div>
-            <div class="form-row">
-              <div class="form-group half">
-                <label>SMTP 服务器</label>
-                <input type="text" v-model="form.email.host" placeholder="smtp.example.com">
+          <div v-if="currentTab === 'notification'" class="settings-panel">
+            <div class="data-section">
+              <div class="form-group">
+                <div class="section-title"><i class="ri-computer-line"></i> 桌面通知</div>
               </div>
-              <div class="form-group half">
-                <label>端口</label>
-                <input type="number" v-model.number="form.email.port" placeholder="465">
+              <div class="form-group">
+                <label class="switch-label">
+                  <span>启用桌面通知</span>
+                  <input type="checkbox" v-model="form.desktop.enabled">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>提前提醒时间 (分钟)</label>
+                <input type="number" v-model.number="form.desktop.advanceMinutes" min="0" placeholder="0 表示准时提醒">
+                <small>设置在任务截止时间前多少分钟进行提醒</small>
+              </div>
+              <div class="form-group">
+                <button class="test-btn" @click="testDesktop" :disabled="!form.desktop.enabled">
+                  <i class="ri-flask-line"></i> 测试桌面通知
+                </button>
               </div>
             </div>
-            <div class="form-group">
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="form.email.secure">
-                <span>使用 SSL/TLS (Secure)</span>
-              </label>
-            </div>
-            <div class="form-group">
-              <label>接收邮箱</label>
-              <input type="text" v-model="form.email.to" placeholder="receive@example.com">
-            </div>
-            <div class="form-group">
-              <button class="test-btn" @click="testEmail" :disabled="!form.email.enabled || !isEmailValid">
-                <i class="ri-flask-line"></i> 发送测试邮件
-              </button>
-            </div>
-          </div>
 
-          <!-- Bark Settings -->
-          <div v-if="currentTab === 'bark'" class="settings-panel">
-            <div class="form-group">
-              <label class="switch-label">
-                <span>启用 Bark 通知</span>
-                <input type="checkbox" v-model="form.bark.enabled">
-                <span class="slider"></span>
-              </label>
+            <div class="data-section">
+              <div class="form-group">
+                <div class="section-title"><i class="ri-mail-line"></i> 邮件</div>
+              </div>
+              <div class="form-group">
+                <label class="switch-label">
+                  <span>启用邮件通知</span>
+                  <input type="checkbox" v-model="form.email.enabled">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>发送人邮箱别名</label>
+                <input type="text" v-model="form.email.alias" placeholder="JustTodo 提醒">
+              </div>
+              <div class="form-group">
+                <label>发送人邮箱</label>
+                <input type="text" v-model="form.email.user" placeholder="your_email@example.com">
+              </div>
+              <div class="form-group">
+                <label>SMTP 密码 / 授权码</label>
+                <input type="password" v-model="form.email.pass" placeholder="Password or App Token">
+              </div>
+              <div class="form-row">
+                <div class="form-group half">
+                  <label>SMTP 服务器</label>
+                  <input type="text" v-model="form.email.host" placeholder="smtp.example.com">
+                </div>
+                <div class="form-group half">
+                  <label>端口</label>
+                  <input type="number" v-model.number="form.email.port" placeholder="465">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" v-model="form.email.secure">
+                  <span>使用 SSL/TLS (Secure)</span>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>接收邮箱</label>
+                <input type="text" v-model="form.email.to" placeholder="receive@example.com">
+              </div>
+              <div class="form-group">
+                <button class="test-btn" @click="testEmail" :disabled="!form.email.enabled || !isEmailValid">
+                  <i class="ri-flask-line"></i> 发送测试邮件
+                </button>
+              </div>
             </div>
-            <div class="form-group">
-              <label>Bark 服务器地址 (包含 Key)</label>
-              <input type="text" v-model="form.bark.serverUrl" placeholder="https://api.day.app/YOUR_KEY/">
-              <small>请输入完整的 Bark 推送 URL，通常以 / 结尾</small>
-            </div>
-            <div class="form-group">
-              <label>通知模式 (Level)</label>
-              <select v-model="form.bark.level">
-                <option value="active">默认 (Active)</option>
-                <option value="timeSensitive">时效性 (Time Sensitive)</option>
-                <option value="passive">被动 (Passive)</option>
-              </select>
-            </div>
-            <div class="form-row">
-               <div class="form-group half">
-                 <label>铃声 (Sound)</label>
-                 <input type="text" v-model="form.bark.sound" placeholder="minuet">
-               </div>
-               <div class="form-group half">
-                 <label>角标 (Badge)</label>
-                 <input type="number" v-model.number="form.bark.badge" placeholder="1">
-               </div>
-            </div>
-            <div class="form-group">
-              <button class="test-btn" @click="testBark" :disabled="!form.bark.enabled || !form.bark.serverUrl">
-                <i class="ri-flask-line"></i> 发送测试消息
-              </button>
-            </div>
-          </div>
 
-          <!-- Webhook Settings -->
-          <div v-if="currentTab === 'webhook'" class="settings-panel">
-            <div class="form-group">
-              <label class="switch-label">
-                <span>启用 Webhook 通知</span>
-                <input type="checkbox" v-model="form.webhook.enabled">
-                <span class="slider"></span>
-              </label>
-            </div>
-            <div class="form-group">
-              <label>Webhook URL</label>
-              <input type="text" v-model="form.webhook.url" placeholder="https://your-webhook.com/endpoint">
-            </div>
-            <div class="form-row">
-               <div class="form-group half">
-                  <label>请求方式</label>
-                  <select v-model="form.webhook.method">
-                    <option value="POST">POST</option>
-                    <option value="GET">GET</option>
-                  </select>
-               </div>
-               <div class="form-group half" v-if="form.webhook.method === 'POST'">
-                  <label>参数格式 (Content-Type)</label>
-                  <select v-model="form.webhook.contentType">
-                    <option value="application/json">JSON</option>
-                    <option value="application/x-www-form-urlencoded">Form Data</option>
-                  </select>
-               </div>
-            </div>
-            
-            <div class="form-group" v-if="form.webhook.method === 'POST'">
-               <label>请求头 (Headers)</label>
-               <div class="key-value-list">
-                 <div v-for="(header, index) in form.webhook.headers" :key="index" class="key-value-item">
-                   <input type="text" v-model="header.key" placeholder="Key" class="kv-input">
-                   <input type="text" v-model="header.value" placeholder="Value" class="kv-input">
-                   <button class="remove-btn" @click="removeHeader(index)"><i class="ri-delete-bin-line"></i></button>
+            <div class="data-section">
+              <div class="form-group">
+                <div class="section-title"><i class="ri-notification-badge-line"></i> Bark</div>
+              </div>
+              <div class="form-group">
+                <label class="switch-label">
+                  <span>启用 Bark 通知</span>
+                  <input type="checkbox" v-model="form.bark.enabled">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Bark 服务器地址 (包含 Key)</label>
+                <input type="text" v-model="form.bark.serverUrl" placeholder="https://api.day.app/YOUR_KEY/">
+                <small>请输入完整的 Bark 推送 URL，通常以 / 结尾</small>
+              </div>
+              <div class="form-group">
+                <label>通知模式 (Level)</label>
+                <select v-model="form.bark.level">
+                  <option value="active">默认 (Active)</option>
+                  <option value="timeSensitive">时效性 (Time Sensitive)</option>
+                  <option value="passive">被动 (Passive)</option>
+                </select>
+              </div>
+              <div class="form-row">
+                 <div class="form-group half">
+                   <label>铃声 (Sound)</label>
+                   <input type="text" v-model="form.bark.sound" placeholder="minuet">
                  </div>
-                 <button class="add-btn-small" @click="addHeader"><i class="ri-add-line"></i> 添加请求头</button>
-               </div>
+                 <div class="form-group half">
+                   <label>角标 (Badge)</label>
+                   <input type="number" v-model.number="form.bark.badge" placeholder="1">
+                 </div>
+              </div>
+              <div class="form-group">
+                <button class="test-btn" @click="testBark" :disabled="!form.bark.enabled || !form.bark.serverUrl">
+                  <i class="ri-flask-line"></i> 发送测试消息
+                </button>
+              </div>
             </div>
 
-            <div class="form-group" v-if="form.webhook.method === 'POST' && form.webhook.contentType === 'application/json'">
-               <label>自定义参数 (JSON Body, 可选)</label>
-               <textarea v-model="form.webhook.customBody" placeholder='{"extra": "value"}' rows="3"></textarea>
-               <small>将合并到默认请求体中</small>
-            </div>
+            <div class="data-section">
+              <div class="form-group">
+                <div class="section-title"><i class="ri-links-line"></i> Webhook</div>
+              </div>
+              <div class="form-group">
+                <label class="switch-label">
+                  <span>启用 Webhook 通知</span>
+                  <input type="checkbox" v-model="form.webhook.enabled">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Webhook URL</label>
+                <input type="text" v-model="form.webhook.url" placeholder="https://your-webhook.com/endpoint">
+              </div>
+              <div class="form-row">
+                 <div class="form-group half">
+                    <label>请求方式</label>
+                    <select v-model="form.webhook.method">
+                      <option value="POST">POST</option>
+                      <option value="GET">GET</option>
+                    </select>
+                 </div>
+                 <div class="form-group half" v-if="form.webhook.method === 'POST'">
+                    <label>参数格式 (Content-Type)</label>
+                    <select v-model="form.webhook.contentType">
+                      <option value="application/json">JSON</option>
+                      <option value="application/x-www-form-urlencoded">Form Data</option>
+                    </select>
+                 </div>
+              </div>
+              
+              <div class="form-group" v-if="form.webhook.method === 'POST'">
+                 <label>请求头 (Headers)</label>
+                 <div class="key-value-list">
+                   <div v-for="(header, index) in form.webhook.headers" :key="index" class="key-value-item">
+                     <input type="text" v-model="header.key" placeholder="Key" class="kv-input">
+                     <input type="text" v-model="header.value" placeholder="Value" class="kv-input">
+                     <button class="remove-btn" @click="removeHeader(index)"><i class="ri-delete-bin-line"></i></button>
+                   </div>
+                   <button class="add-btn-small" @click="addHeader"><i class="ri-add-line"></i> 添加请求头</button>
+                 </div>
+              </div>
 
-            <div class="form-group">
-              <button class="test-btn" @click="testWebhook" :disabled="!form.webhook.enabled || !form.webhook.url">
-                <i class="ri-flask-line"></i> 发送测试请求
-              </button>
+              <div class="form-group" v-if="form.webhook.method === 'POST' && form.webhook.contentType === 'application/json'">
+                 <label>自定义参数 (JSON Body, 可选)</label>
+                 <textarea v-model="form.webhook.customBody" placeholder='{"extra": "value"}' rows="3"></textarea>
+                 <small>将合并到默认请求体中</small>
+              </div>
+
+              <div class="form-group">
+                <button class="test-btn" @click="testWebhook" :disabled="!form.webhook.enabled || !form.webhook.url">
+                  <i class="ri-flask-line"></i> 发送测试请求
+                </button>
+              </div>
             </div>
           </div>
 
@@ -319,7 +308,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'save', 'save-backup', 'data-restored', 'test-desktop', 'test-email', 'test-bark', 'test-webhook']);
 
-const currentTab = ref('desktop');
+const currentTab = ref('notification');
 
 const defaultSettings = {
   desktop: { enabled: true, advanceMinutes: 0 },
@@ -359,7 +348,10 @@ const hydrateFromProps = () => {
 };
 
 watch(() => props.visible, (newVal) => {
-  if (newVal) hydrateFromProps();
+  if (newVal) {
+    currentTab.value = 'notification';
+    hydrateFromProps();
+  }
 });
 
 watch(

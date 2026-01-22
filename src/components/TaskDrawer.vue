@@ -31,10 +31,14 @@ const props = defineProps({
   defaultCategoryId: {
     type: String,
     default: 'default'
+  },
+  enabledNotifyChannels: {
+    type: Array,
+    default: null
   }
 });
 
-const emit = defineEmits(['update:visible', 'save', 'delay']);
+const emit = defineEmits(['update:visible', 'save', 'delay', 'toast']);
 
 const form = ref({
   content: '',
@@ -45,6 +49,7 @@ const form = ref({
   reminderEnabled: true,
   remindAt: '',
   reminderAdvanceMinutes: null,
+  notifyChannels: [],
   repeatRule: 'none',
   repeatWeekDays: [],
   repeatMonthDays: [],
@@ -358,6 +363,7 @@ watch(() => props.visible, (val) => {
         reminderEnabled: props.initialData.reminderEnabled !== false,
         remindAt: props.initialData.remindAt || '',
         reminderAdvanceMinutes: typeof props.initialData.reminderAdvanceMinutes === 'number' ? props.initialData.reminderAdvanceMinutes : null,
+        notifyChannels: Array.isArray(props.initialData.notifyChannels) ? [...props.initialData.notifyChannels] : [],
         repeatWeekDays: Array.isArray(props.initialData.repeatWeekDays) ? [...props.initialData.repeatWeekDays] : [],
         repeatMonthDays: Array.isArray(props.initialData.repeatMonthDays) ? [...props.initialData.repeatMonthDays] : [],
         subtasks: props.initialData.subtasks ? JSON.parse(JSON.stringify(props.initialData.subtasks)) : [],
@@ -375,6 +381,7 @@ watch(() => props.visible, (val) => {
         reminderEnabled: true,
         remindAt: '',
         reminderAdvanceMinutes: null,
+        notifyChannels: [],
         repeatRule: 'none',
         repeatWeekDays: [],
         repeatMonthDays: [],
@@ -416,6 +423,48 @@ onUnmounted(() => {
 const getCategoryName = (id) => categoryList.value.find(c => c.id === id)?.name;
 const getRepeatLabel = (val) => repeatOptions.value.find(o => o.value === val)?.label;
 const getPriorityLabel = (val) => priorityOptions.find(o => o.value === val)?.label;
+
+const allNotifyChannelOptions = [
+  { value: 'desktop', label: '桌面' },
+  { value: 'email', label: '邮件' },
+  { value: 'bark', label: 'Bark' },
+  { value: 'webhook', label: 'Webhook' }
+];
+
+const notifyChannelOptions = computed(() => {
+  if (!Array.isArray(props.enabledNotifyChannels)) return allNotifyChannelOptions;
+  const allowed = new Set(props.enabledNotifyChannels.filter(Boolean));
+  return allNotifyChannelOptions.filter(opt => allowed.has(opt.value));
+});
+
+const hasNotifyChannels = computed(() => Array.isArray(form.value.notifyChannels) && form.value.notifyChannels.length > 0);
+
+const notifyChannelsText = computed(() => {
+  const selected = Array.isArray(form.value.notifyChannels) ? form.value.notifyChannels : [];
+  const map = new Map(allNotifyChannelOptions.map(o => [o.value, o.label]));
+  const labels = [...new Set(selected.filter(v => map.has(v)))].map(v => map.get(v));
+  if (labels.length > 0) return labels.join('、');
+  return form.value.reminderEnabled ? '请选择' : '未开启提醒';
+});
+
+const toggleNotifyChannel = (val) => {
+  if (!form.value.reminderEnabled) return;
+  const current = Array.isArray(form.value.notifyChannels) ? [...form.value.notifyChannels] : [];
+  if (current.includes(val)) {
+    form.value.notifyChannels = current.filter(v => v !== val);
+  } else {
+    form.value.notifyChannels = [...current, val];
+  }
+};
+
+const clearNotifyChannels = () => {
+  form.value.notifyChannels = [];
+};
+
+watch(() => form.value.reminderEnabled, (enabled) => {
+  if (enabled) return;
+  if (activeDropdown.value === 'notifyChannels') activeDropdown.value = null;
+});
 
 const openDatePicker = () => {
   activeDropdown.value = null;
@@ -620,6 +669,13 @@ watch(() => form.value.repeatRule, (newVal) => {
 
 const onSave = () => {
   if (!form.value.content.trim()) return;
+  if (form.value.reminderEnabled) {
+    const selected = Array.isArray(form.value.notifyChannels) ? form.value.notifyChannels.filter(Boolean) : [];
+    if (selected.length === 0) {
+      emit('toast', { message: '请选择至少一个通知渠道', type: 'error' });
+      return;
+    }
+  }
   const cleanedSubtasks = Array.isArray(form.value.subtasks)
     ? form.value.subtasks.filter(s => s && typeof s.content === 'string' && s.content.trim() !== '')
     : [];
@@ -657,6 +713,9 @@ const onOverlayClick = () => {
       
       <div class="drawer-content" ref="drawerContentRef">
         <div class="section-card task-main-card">
+          <div class="task-content-label">
+            <span>任务内容</span><span class="required-mark">*</span>
+          </div>
           <div class="task-header-row">
             <div 
               class="large-circle-icon" 
@@ -897,17 +956,51 @@ const onOverlayClick = () => {
                 <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
                 <i class="ri-arrow-down-s-line field-arrow"></i>
               </div>
-              <div class="hint-text">默认提醒时间：{{ getDefaultReminderText() }}</div>
+            </div>
+          </div>
 
-              <div class="reminder-advance-row" v-if="form.reminderEnabled">
-                <label>提前提醒 (分钟)</label>
-                <input
-                  type="number"
-                  min="0"
-                  :value="form.reminderAdvanceMinutes ?? ''"
-                  placeholder="留空使用设置"
-                  @input="setReminderAdvanceMinutes($event.target.value)"
-                >
+          <div class="form-row reminder-meta-row" v-if="form.repeatRule === 'none' && form.reminderEnabled">
+            <div class="form-col full-width">
+              <label>提前提醒 (分钟)</label>
+              <input
+                type="number"
+                min="0"
+                :value="form.reminderAdvanceMinutes ?? ''"
+                placeholder="留空使用设置"
+                @input="setReminderAdvanceMinutes($event.target.value)"
+              >
+              <div class="hint-text reminder-default-hint">默认提醒时间：{{ getDefaultReminderText() }}</div>
+            </div>
+          </div>
+
+          <div class="form-row reminder-meta-row" v-if="form.repeatRule === 'none' && form.reminderEnabled">
+            <div class="form-col full-width">
+              <div class="meta-label-row">
+                <label>通知渠道<span class="required-mark">*</span></label>
+                <span v-if="!hasNotifyChannels" class="meta-follow-hint">未选择</span>
+              </div>
+              <div
+                class="select-field notify-select"
+                :class="{ open: activeDropdown === 'notifyChannels' }"
+                @click.stop="toggleDropdown('notifyChannels')"
+              >
+                <span class="field-text">{{ notifyChannelsText }}</span>
+                <i v-if="hasNotifyChannels" class="ri-close-circle-fill clear-btn" @click.stop="clearNotifyChannels"></i>
+                <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'notifyChannels' }"></i>
+                <transition name="slide-pull">
+                  <div class="dropdown-panel" v-show="activeDropdown === 'notifyChannels'" @click.stop>
+                    <div
+                      v-for="opt in notifyChannelOptions"
+                      :key="opt.value"
+                      class="dropdown-item notify-item"
+                      :class="{ selected: Array.isArray(form.notifyChannels) && form.notifyChannels.includes(opt.value) }"
+                      @click.stop="toggleNotifyChannel(opt.value)"
+                    >
+                      <i class="ri-check-line check-icon"></i>
+                      <span>{{ opt.label }}</span>
+                    </div>
+                  </div>
+                </transition>
               </div>
             </div>
           </div>
@@ -925,17 +1018,47 @@ const onOverlayClick = () => {
                 <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
                 <i class="ri-arrow-down-s-line field-arrow"></i>
               </div>
-              <div class="hint-text">默认提醒时间：{{ getDefaultReminderText() }}</div>
-
-              <div class="reminder-advance-row">
-                <label>提前提醒 (分钟)</label>
-                <input
-                  type="number"
-                  min="0"
-                  :value="form.reminderAdvanceMinutes ?? ''"
-                  placeholder="留空使用设置"
-                  @input="setReminderAdvanceMinutes($event.target.value)"
-                >
+              <div class="reminder-meta-grid">
+                <div class="reminder-meta-item">
+                  <label>提前提醒 (分钟)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    :value="form.reminderAdvanceMinutes ?? ''"
+                    placeholder="留空使用设置"
+                    @input="setReminderAdvanceMinutes($event.target.value)"
+                  >
+                </div>
+                <div class="hint-text reminder-default-hint">默认提醒时间：{{ getDefaultReminderText() }}</div>
+                <div class="reminder-meta-item">
+                  <div class="meta-label-row">
+                    <label>通知渠道<span class="required-mark">*</span></label>
+                    <span v-if="!hasNotifyChannels" class="meta-follow-hint">未选择</span>
+                  </div>
+                  <div
+                    class="select-field notify-select"
+                    :class="{ open: activeDropdown === 'notifyChannels' }"
+                    @click.stop="toggleDropdown('notifyChannels')"
+                  >
+                    <span class="field-text">{{ notifyChannelsText }}</span>
+                    <i v-if="hasNotifyChannels" class="ri-close-circle-fill clear-btn" @click.stop="clearNotifyChannels"></i>
+                    <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'notifyChannels' }"></i>
+                    <transition name="slide-pull">
+                      <div class="dropdown-panel" v-show="activeDropdown === 'notifyChannels'" @click.stop>
+                        <div
+                          v-for="opt in notifyChannelOptions"
+                          :key="opt.value"
+                          class="dropdown-item notify-item"
+                          :class="{ selected: Array.isArray(form.notifyChannels) && form.notifyChannels.includes(opt.value) }"
+                          @click.stop="toggleNotifyChannel(opt.value)"
+                        >
+                          <i class="ri-check-line check-icon"></i>
+                          <span>{{ opt.label }}</span>
+                        </div>
+                      </div>
+                    </transition>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1226,6 +1349,21 @@ const onOverlayClick = () => {
   }
 }
 
+.task-content-label {
+  font-size: 12px;
+  color: var(--secondary-text);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.required-mark {
+  color: var(--danger-color);
+  line-height: 1;
+}
+
 .dashed-divider {
   height: 1px;
   border-bottom: 1px dashed var(--secondary-text);
@@ -1341,11 +1479,12 @@ const onOverlayClick = () => {
 
 .week-selector {
   display: flex;
-  gap: 8px;
+  gap: 4px;
+  justify-content: space-between;
   
   .week-btn {
-    width: 32px;
-    height: 32px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -1353,7 +1492,7 @@ const onOverlayClick = () => {
     border: 1px solid var(--border-color);
     background: var(--bg-secondary);
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11px;
     transition: all 0.2s;
 
     &:hover {
@@ -1411,6 +1550,98 @@ const onOverlayClick = () => {
   font-size: 12px;
   color: var(--secondary-text);
   margin-top: 5px;
+}
+
+.form-meta-row {
+  display: flex;
+  gap: 15px;
+  margin-top: 6px;
+  align-items: flex-start;
+
+  &.compact {
+    margin-top: 0;
+  }
+
+  .meta-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    position: relative;
+  }
+
+  .meta-right {
+    justify-content: flex-start;
+  }
+
+  .hint-text {
+    margin-top: 0;
+  }
+}
+
+.date-reminder-row {
+  align-items: flex-start;
+}
+
+.reminder-meta-row {
+  margin-top: -6px;
+}
+
+.reminder-meta-row + .reminder-meta-row {
+  margin-top: 0;
+}
+
+.reminder-meta-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.reminder-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.reminder-default-hint {
+  margin-top: 8px;
+}
+
+.notify-select .field-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meta-follow-hint {
+  font-size: 12px;
+  color: var(--secondary-text);
+}
+
+.dropdown-item.notify-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .check-icon {
+    width: 16px;
+    opacity: 0;
+  }
+
+  &.selected {
+    .check-icon {
+      opacity: 1;
+    }
+  }
 }
 
 label {
@@ -1515,6 +1746,9 @@ button.confirm-btn {
       flex-basis: 100%;
       min-width: 100%;
     }
+  }
+  .reminder-meta-grid {
+    grid-template-columns: 1fr;
   }
 }
 
