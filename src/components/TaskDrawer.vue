@@ -38,7 +38,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['update:visible', 'save', 'delay', 'toast']);
+const emit = defineEmits(['update:visible', 'save', 'toast']);
 
 const form = ref({
   content: '',
@@ -394,7 +394,6 @@ watch(() => props.visible, (val) => {
 
 const showDatePicker = ref(false);
 const showReminderPicker = ref(false);
-const isDelayAction = ref(false);
 const activeDropdown = ref(null);
 const datePickerContainer = ref(null);
 
@@ -477,23 +476,7 @@ const openReminderPicker = () => {
 };
 
 const handleDateConfirm = (val) => {
-  if (isDelayAction.value) {
-      // Add delay history
-      if (!form.value.history) form.value.history = [];
-      form.value.history.push({
-        type: 'delay',
-        timestamp: Date.now(),
-        details: val
-      });
-      
-      form.value.dueDate = val;
-      isDelayAction.value = false;
-      
-      // Auto save
-      onSave();
-  } else {
-      form.value.dueDate = val;
-  }
+  form.value.dueDate = val;
   showDatePicker.value = false;
 };
 
@@ -524,11 +507,6 @@ const setReminderAdvanceMinutes = (val) => {
   }
   const n = Number(raw);
   form.value.reminderAdvanceMinutes = Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
-};
-
-const triggerDelay = () => {
-    isDelayAction.value = true;
-    showDatePicker.value = true;
 };
 
 // Weekly: 0-6 (Sun-Sat)
@@ -940,9 +918,6 @@ const onOverlayClick = () => {
                 <i v-if="form.dueDate" class="ri-close-circle-fill clear-btn" @click.stop="form.dueDate = ''"></i>
                 <i class="ri-arrow-down-s-line field-arrow"></i>
               </div>
-              <button v-if="initialData && initialData.id" class="delay-btn" @click.stop="triggerDelay" title="延迟操作" style="margin-top:8px;">
-                <i class="ri-time-line"></i> 推迟
-              </button>
             </div>
 
             <div class="form-col">
@@ -1108,7 +1083,7 @@ const onOverlayClick = () => {
          <DateTimePicker 
            :model-value="form.dueDate"
            :show-time="true"
-           :show-clear="!isDelayAction"
+           :show-clear="true"
            :min-date="dayjs().format('YYYY-MM-DD')"
            @confirm="handleDateConfirm"
            @close="showDatePicker = false"
@@ -1782,25 +1757,6 @@ button.confirm-btn {
   .clear-btn {
     color: var(--secondary-text);
     &:hover { color: var(--text-color); }
-  }
-}
-
-.delay-btn {
-  padding: 0 15px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: var(--bg-secondary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--text-color);
-  font-size: 14px;
-  
-  &:hover {
-    background: var(--hover-bg);
-    border-color: var(--primary-color);
-    color: var(--primary-color);
   }
 }
 

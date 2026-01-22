@@ -151,6 +151,116 @@ const showToast = (message, type = 'success') => {
   }, 2000);
 };
 
+const reminderPopup = ref({
+  visible: false,
+  todoId: '',
+  title: '待办提醒',
+  body: '',
+  customAmount: 5,
+  customUnit: 'minute'
+});
+
+const openReminderPopup = (todo, body) => {
+  reminderPopup.value = {
+    visible: true,
+    todoId: todo?.id || '',
+    title: '待办提醒',
+    body: body || '',
+    customAmount: 5,
+    customUnit: 'minute'
+  };
+};
+
+const closeReminderPopup = () => {
+  reminderPopup.value.visible = false;
+};
+
+const bringAppToFront = () => {
+  try {
+    if (window.utools && typeof window.utools.showMainWindow === 'function') {
+      window.utools.showMainWindow();
+    }
+  } catch (e) {}
+
+  try {
+    if (window.utools && typeof window.utools.getCurrentBrowserWindow === 'function') {
+      const win = window.utools.getCurrentBrowserWindow();
+      if (win) {
+        try { if (typeof win.show === 'function') win.show(); } catch (e) {}
+        try { if (typeof win.restore === 'function') win.restore(); } catch (e) {}
+        try { if (typeof win.focus === 'function') win.focus(); } catch (e) {}
+      }
+    }
+  } catch (e) {}
+
+  try {
+    if (window.require) {
+      const { remote } = window.require('electron');
+      const win = remote?.getCurrentWindow?.();
+      if (win) {
+        try { if (typeof win.show === 'function') win.show(); } catch (e) {}
+        try { if (typeof win.restore === 'function') win.restore(); } catch (e) {}
+        try { if (typeof win.focus === 'function') win.focus(); } catch (e) {}
+      }
+    }
+  } catch (e) {}
+
+  try { window.focus && window.focus(); } catch (e) {}
+};
+
+const applySnooze = (todoId, amount, unit) => {
+  const id = (todoId || '').toString();
+  if (!id) return;
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) return;
+  const unitMap = {
+    minute: 'minute',
+    hour: 'hour',
+    day: 'day'
+  };
+  const u = unitMap[unit] || 'minute';
+  const todo = todos.value.find(t => t.id === id);
+  if (!todo) return;
+  const newRemindAt = dayjs().add(Math.floor(n), u).second(0).format('YYYY-MM-DD HH:mm');
+  const historyList = Array.isArray(todo.history) ? [...todo.history] : [];
+  historyList.push({ type: 'delay', timestamp: Date.now(), details: newRemindAt });
+  updateTodo({
+    ...todo,
+    reminderEnabled: true,
+    remindAt: newRemindAt,
+    history: historyList
+  });
+  if (taskDrawer.value.visible && taskDrawer.value.initialData?.id === id) {
+    const updated = todos.value.find(t => t.id === id);
+    if (updated) taskDrawer.value.initialData = JSON.parse(JSON.stringify(updated));
+  }
+};
+
+const snooze5m = () => {
+  applySnooze(reminderPopup.value.todoId, 5, 'minute');
+  closeReminderPopup();
+  showToast('已推迟 5 分钟');
+};
+const snooze10m = () => {
+  applySnooze(reminderPopup.value.todoId, 10, 'minute');
+  closeReminderPopup();
+  showToast('已推迟 10 分钟');
+};
+const snoozeCustom = () => {
+  applySnooze(reminderPopup.value.todoId, reminderPopup.value.customAmount, reminderPopup.value.customUnit);
+  closeReminderPopup();
+  showToast('已推迟');
+};
+const openReminderTodoDetails = () => {
+  const id = (reminderPopup.value.todoId || '').toString();
+  if (!id) return;
+  const todo = todos.value.find(t => t.id === id);
+  if (!todo) return;
+  bringAppToFront();
+  openTaskDrawer(todo);
+  closeReminderPopup();
+};
+
 const themeMode = ref('system');
 const applyTheme = (mode) => {
   if (isSticky.value) return;
@@ -477,31 +587,6 @@ const handleDrawerSave = (taskData) => {
   }
   taskDrawer.value.visible = false;
   showToast('保存成功');
-};
-
-const handleDrawerDelay = ({ id, date }) => {
-  const index = todos.value.findIndex(t => t.id === id);
-  if (index !== -1) {
-    const todo = todos.value[index];
-    const newHistory = [...(todo.history || [])];
-    newHistory.push({
-      type: 'delay',
-      timestamp: Date.now(),
-      details: date
-    });
-    
-    const updatedTodo = {
-      ...todo,
-      dueDate: date,
-      history: newHistory
-    };
-    updateTodo(updatedTodo);
-    
-    // Update drawer data if open
-    if (taskDrawer.value.visible && taskDrawer.value.initialData.id === id) {
-       taskDrawer.value.initialData = JSON.parse(JSON.stringify(updatedTodo));
-    }
-  }
 };
 
 const handleTaskSave = (taskData) => {
@@ -923,7 +1008,11 @@ const sendNotification = async (todo) => {
     // Always try HTML5 Notification API first for better control (requireInteraction)
     if (Notification.permission === 'granted') {
        try {
-         new Notification(title, options);
+         const n = new Notification(title, options);
+         n.onclick = () => {
+           bringAppToFront();
+           setTimeout(() => openReminderPopup(todo, body), 0);
+         };
        } catch (e) {
          console.error('Notification API failed', e);
          // Fallback to uTools native notification
@@ -933,7 +1022,11 @@ const sendNotification = async (todo) => {
        Notification.requestPermission().then(permission => {
          if (permission === 'granted') {
            try {
-             new Notification(title, options);
+             const n = new Notification(title, options);
+             n.onclick = () => {
+               bringAppToFront();
+               setTimeout(() => openReminderPopup(todo, body), 0);
+             };
            } catch (e) {
              if (window.utools) window.utools.showNotification(body);
            }
@@ -2312,7 +2405,6 @@ const showExportContextMenu = (event) => {
       :default-category-id="currentCategoryId"
       :enabled-notify-channels="enabledNotifyChannels"
       @save="handleDrawerSave"
-      @delay="handleDrawerDelay"
       @toast="handleTaskToast"
     />
 
@@ -2453,6 +2545,39 @@ const showExportContextMenu = (event) => {
       @toast="handleTaskToast"
     />
 
+    <div v-if="reminderPopup.visible" class="reminder-popup-overlay" @click.self="closeReminderPopup">
+      <div class="reminder-popup" @click.stop>
+        <div class="reminder-popup-header">
+          <div class="reminder-popup-title">{{ reminderPopup.title }}</div>
+          <button class="reminder-popup-close" type="button" @click="closeReminderPopup">
+            <i class="ri-close-line"></i>
+          </button>
+        </div>
+        <div class="reminder-popup-body">
+          <div class="reminder-popup-content">
+            {{ (todos.find(t => t.id === reminderPopup.todoId)?.content) || '' }}
+          </div>
+          <div class="reminder-popup-desc">{{ reminderPopup.body }}</div>
+        </div>
+        <div class="reminder-popup-actions">
+          <button class="reminder-popup-btn" type="button" @click="snooze5m">推迟 5 分钟</button>
+          <button class="reminder-popup-btn" type="button" @click="snooze10m">推迟 10 分钟</button>
+        </div>
+        <div class="reminder-popup-actions">
+          <button class="reminder-popup-btn" type="button" @click="openReminderTodoDetails">查看详情</button>
+        </div>
+        <div class="reminder-popup-custom">
+          <input class="reminder-popup-input" type="number" min="1" v-model.number="reminderPopup.customAmount" />
+          <select class="reminder-popup-select" v-model="reminderPopup.customUnit">
+            <option value="minute">分钟</option>
+            <option value="hour">小时</option>
+            <option value="day">天</option>
+          </select>
+          <button class="reminder-popup-btn primary" type="button" @click="snoozeCustom">推迟</button>
+        </div>
+      </div>
+    </div>
+
     <Toast
       :visible="toast.visible"
       :message="toast.message"
@@ -2466,6 +2591,135 @@ const showExportContextMenu = (event) => {
   display: flex;
   color: var(--text-color);
   background: var(--bg-color);
+}
+
+.reminder-popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3000;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 16px;
+}
+
+.reminder-popup {
+  width: 340px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.reminder-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 8px;
+}
+
+.reminder-popup-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.reminder-popup-close {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.reminder-popup-close:hover {
+  background: var(--hover-bg);
+  color: var(--text-color);
+}
+
+.reminder-popup-body {
+  padding: 0 12px 12px;
+}
+
+.reminder-popup-content {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+
+.reminder-popup-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.reminder-popup-actions {
+  display: flex;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.reminder-popup-custom {
+  display: flex;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.reminder-popup-input {
+  width: 80px;
+  height: 34px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  padding: 0 10px;
+  outline: none;
+}
+
+.reminder-popup-select {
+  flex: 1;
+  height: 34px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  padding: 0 10px;
+  outline: none;
+}
+
+.reminder-popup-btn {
+  flex: 1;
+  height: 34px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.reminder-popup-btn:hover {
+  background: var(--hover-bg);
+}
+
+.reminder-popup-btn.primary {
+  border-color: var(--primary-color);
+  background: var(--primary-color);
+  color: #fff;
+}
+
+.reminder-popup-btn.primary:hover {
+  opacity: 0.92;
 }
 
 .main-content {
