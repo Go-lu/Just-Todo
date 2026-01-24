@@ -45,9 +45,22 @@ const datePickerContainer = ref(null);
 const reminderPickerContainer = ref(null);
 const dueTriggerRef = ref(null);
 const remindAtTriggerRef = ref(null);
+const repeatDueTimeInputRef = ref(null);
+const repeatRemindTimeInputRef = ref(null);
 const floatingPickerRef = ref(null);
 const activeDropdown = ref(null);
 const floatingPickerStyle = ref({});
+
+const openNativeTimePicker = (type) => {
+  const el = type === 'due' ? repeatDueTimeInputRef.value : repeatRemindTimeInputRef.value;
+  if (!el) return;
+  if (typeof el.showPicker === 'function') {
+    el.showPicker();
+    return;
+  }
+  if (typeof el.focus === 'function') el.focus();
+  if (typeof el.click === 'function') el.click();
+};
 
 const toggleDropdown = (name) => {
   if (activeDropdown.value === name) {
@@ -548,28 +561,97 @@ const normalizeMonthDays = (days) => {
   return [...new Set(filtered)];
 };
 
-const computeNextWeeklyDate = (from, selectedDays) => {
+const extractDatePart = (val) => {
+  if (!val) return '';
+  const s = (val || '').toString();
+  const d = dayjs(s);
+  if (!d.isValid()) return '';
+  return d.format('YYYY-MM-DD');
+};
+
+const extractTimePart = (val) => {
+  if (!val) return '';
+  const s = (val || '').toString();
+  if (!s.includes(':')) return '';
+  const d = dayjs(s);
+  if (!d.isValid()) return '';
+  return d.format('HH:mm');
+};
+
+const mergeDateAndTime = (dateStr, timeStr) => {
+  if (!dateStr) return '';
+  if (!timeStr) return dateStr;
+  return `${dateStr} ${timeStr}`;
+};
+
+const repeatNextDateText = computed(() => extractDatePart(form.value.dueDate));
+
+const repeatDueTime = computed({
+  get: () => extractTimePart(form.value.dueDate) || '23:59',
+  set: (time) => {
+    const dateStr = extractDatePart(form.value.dueDate) || dayjs().format('YYYY-MM-DD');
+    const t = (time || '').toString();
+    form.value.dueDate = mergeDateAndTime(dateStr, t);
+    if (form.value.repeatRule !== 'none' && form.value.remindAt) {
+      const remindTime = extractTimePart(form.value.remindAt);
+      if (remindTime) form.value.remindAt = mergeDateAndTime(dateStr, remindTime);
+    }
+  }
+});
+
+const repeatRemindTime = computed({
+  get: () => extractTimePart(form.value.remindAt) || '',
+  set: (time) => {
+    const t = (time || '').toString();
+    if (!t) {
+      form.value.remindAt = '';
+      return;
+    }
+    const dateStr = extractDatePart(form.value.dueDate) || dayjs().format('YYYY-MM-DD');
+    form.value.remindAt = mergeDateAndTime(dateStr, t);
+  }
+});
+
+const buildCandidateDateTime = (date, timeStr) => {
+  const t = (timeStr || '').toString();
+  const [hhRaw, mmRaw] = t.split(':');
+  const hh = Number(hhRaw);
+  const mm = Number(mmRaw);
+  const hour = Number.isFinite(hh) ? hh : 23;
+  const minute = Number.isFinite(mm) ? mm : 59;
+  return date.hour(hour).minute(minute).second(0);
+};
+
+const computeNextWeeklyDate = (from, selectedDays, dueTime) => {
   const base = from && dayjs.isDayjs(from) ? from.startOf('day') : dayjs().startOf('day');
   const selected = normalizeWeekDays(selectedDays);
   if (selected.length === 0) return base.format('YYYY-MM-DD');
+  const now = dayjs();
   for (let i = 0; i <= 7; i++) {
     const candidate = base.add(i, 'day');
-    if (selected.includes(candidate.day())) return candidate.format('YYYY-MM-DD');
+    if (selected.includes(candidate.day())) {
+      const candidateDateTime = buildCandidateDateTime(candidate.clone(), dueTime || '23:59');
+      if (candidateDateTime.isSameOrAfter(now)) return candidate.format('YYYY-MM-DD');
+    }
   }
   return base.add(7, 'day').format('YYYY-MM-DD');
 };
 
-const computeNextMonthlyDate = (from, selectedDays) => {
+const computeNextMonthlyDate = (from, selectedDays, dueTime) => {
   const base = from && dayjs.isDayjs(from) ? from.startOf('day') : dayjs().startOf('day');
   const selected = normalizeMonthDays(selectedDays).sort((a, b) => a - b);
   if (selected.length === 0) return base.format('YYYY-MM-DD');
+  const now = dayjs();
 
   const inMonthCandidate = (monthBase) => {
     const dim = monthBase.daysInMonth();
     const baseDay = monthBase.date();
     const mapped = [...new Set(selected.map(d => Math.min(d, dim)))].sort((a, b) => a - b);
     for (const d of mapped) {
-      if (d >= baseDay) return monthBase.date(d);
+      if (d < baseDay) continue;
+      const candidate = monthBase.date(d);
+      const candidateDateTime = buildCandidateDateTime(candidate.clone(), dueTime || '23:59');
+      if (candidateDateTime.isSameOrAfter(now)) return candidate;
     }
     return null;
   };
@@ -584,10 +666,18 @@ const computeNextMonthlyDate = (from, selectedDays) => {
 };
 
 const updateDueDateBySelection = () => {
+  const time = extractTimePart(form.value.dueDate) || '23:59';
   if (form.value.repeatRule === 'weekly') {
-    form.value.dueDate = computeNextWeeklyDate(dayjs(), form.value.repeatWeekDays);
+    const date = computeNextWeeklyDate(dayjs(), form.value.repeatWeekDays, time);
+    form.value.dueDate = mergeDateAndTime(date, time);
   } else if (form.value.repeatRule === 'monthly') {
-    form.value.dueDate = computeNextMonthlyDate(dayjs(), form.value.repeatMonthDays);
+    const date = computeNextMonthlyDate(dayjs(), form.value.repeatMonthDays, time);
+    form.value.dueDate = mergeDateAndTime(date, time);
+  }
+  if (form.value.repeatRule !== 'none' && form.value.remindAt) {
+    const remindTime = extractTimePart(form.value.remindAt);
+    const dateStr = extractDatePart(form.value.dueDate);
+    if (remindTime && dateStr) form.value.remindAt = mergeDateAndTime(dateStr, remindTime);
   }
 };
 
@@ -622,13 +712,15 @@ const setYearlyDate = (monthIndex, date) => {
   const daysInMonth = target.daysInMonth();
   target = target.date(Math.min(date, daysInMonth));
   
-  if (target.isBefore(today, 'day')) {
+  const time = extractTimePart(form.value.dueDate) || '23:59';
+  const candidate = buildCandidateDateTime(target.clone(), time);
+  
+  if (candidate.isBefore(today)) {
     target = target.add(1, 'year');
-    // Check leap year for Feb 29
     const dim = target.daysInMonth();
     if (target.date() > dim) target = target.date(dim);
   }
-  form.value.dueDate = target.format('YYYY-MM-DD');
+  form.value.dueDate = mergeDateAndTime(target.format('YYYY-MM-DD'), time);
 };
 
 const toggleMonthDay = (day) => {
@@ -658,7 +750,7 @@ watch(() => form.value.repeatRule, (newVal) => {
     updateDueDateBySelection();
     return;
   }
-  if (newVal !== 'none' && !form.value.dueDate) form.value.dueDate = dayjs().format('YYYY-MM-DD');
+  if (newVal !== 'none' && !form.value.dueDate) form.value.dueDate = mergeDateAndTime(dayjs().format('YYYY-MM-DD'), '23:59');
 });
 
 const onSave = () => {
@@ -835,7 +927,7 @@ const onClose = () => {
         </div>
 
         <div class="form-row">
-          <div class="form-col full-width">
+          <div class="form-col">
             <label>重复</label>
             <div class="select-field" :class="{ open: activeDropdown === 'repeat' }" @click.stop="toggleDropdown('repeat')">
               <span class="field-text">{{ getRepeatLabelFromOptions(form.repeatRule) || '不重复' }}</span>
@@ -843,10 +935,10 @@ const onClose = () => {
             </div>
             <transition name="slide-pull">
               <div class="dropdown-panel" v-show="activeDropdown === 'repeat'" @click.stop>
-                <div 
-                  class="dropdown-item" 
-                  v-for="opt in repeatOptions" 
-                  :key="opt.value" 
+                <div
+                  class="dropdown-item"
+                  v-for="opt in repeatOptions"
+                  :key="opt.value"
                   @click="form.repeatRule = opt.value; activeDropdown = null"
                 >
                   {{ opt.label }}
@@ -854,98 +946,135 @@ const onClose = () => {
               </div>
             </transition>
           </div>
+          <div class="form-col" ref="datePickerContainer">
+            <label>截止日期时间</label>
+            <div
+              v-if="form.repeatRule === 'none'"
+              ref="dueTriggerRef"
+              class="select-field date-picker-wrapper"
+              :class="{ open: activeDropdown === 'date' }"
+              @click.stop="toggleDropdown('date')"
+            >
+              <i class="ri-calendar-line icon-prefix"></i>
+              <span class="field-text">{{ form.dueDate || '选择日期时间' }}</span>
+              <i v-if="form.dueDate" class="ri-close-circle-fill clear-btn" @click.stop="form.dueDate = ''"></i>
+              <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'date' }"></i>
+            </div>
+            <div
+              v-else
+              class="select-field date-picker-wrapper"
+              @click.stop="openNativeTimePicker('due')"
+            >
+              <i class="ri-time-line icon-prefix"></i>
+              <input ref="repeatDueTimeInputRef" type="time" v-model="repeatDueTime" @click.stop>
+              <i class="ri-arrow-down-s-line field-arrow"></i>
+            </div>
+          </div>
         </div>
 
-        <!-- Detailed Repeat Settings -->
         <div class="form-row" v-if="form.repeatRule === 'weekly'">
-          <div class="form-col full-width">
-             <label>重复时间</label>
-             <div class="week-selector">
-               <div 
-                 v-for="d in weekDays" 
-                 :key="d.val" 
-                 class="week-btn"
-                 :class="{ active: Array.isArray(form.repeatWeekDays) && form.repeatWeekDays.includes(d.val) }"
-                 @click="toggleWeekDay(d.val)"
-               >
-                 {{ d.label }}
-               </div>
-             </div>
-             <div class="hint-text">
-               下次执行日期: {{ form.dueDate }}
-             </div>
+          <div class="form-col">
+            <label>重复时间</label>
+            <div class="week-selector">
+              <div
+                v-for="d in weekDays"
+                :key="d.val"
+                class="week-btn"
+                :class="{ active: Array.isArray(form.repeatWeekDays) && form.repeatWeekDays.includes(d.val) }"
+                @click="toggleWeekDay(d.val)"
+              >
+                {{ d.label }}
+              </div>
+            </div>
+            <div class="hint-text">下次执行日期: {{ repeatNextDateText }} {{ repeatDueTime }}</div>
           </div>
+          <div class="form-col"></div>
         </div>
 
         <div class="form-row" v-if="form.repeatRule === 'monthly'">
-          <div class="form-col full-width">
-             <label>每月几号</label>
-             <div class="month-selector">
-               <div class="month-grid">
-                 <div
-                   v-for="d in monthDays"
-                   :key="d"
-                   class="day-btn"
-                   :class="{ active: Array.isArray(form.repeatMonthDays) && form.repeatMonthDays.includes(d) }"
-                   @click="toggleMonthDay(d)"
-                 >
-                   {{ d }}
-                 </div>
-               </div>
-             </div>
-             <div class="hint-text">
-               下次执行日期: {{ form.dueDate }}
-             </div>
+          <div class="form-col">
+            <label>每月几号</label>
+            <div class="month-selector">
+              <div class="month-grid">
+                <div
+                  v-for="d in monthDays"
+                  :key="d"
+                  class="day-btn"
+                  :class="{ active: Array.isArray(form.repeatMonthDays) && form.repeatMonthDays.includes(d) }"
+                  @click="toggleMonthDay(d)"
+                >
+                  {{ d }}
+                </div>
+              </div>
+            </div>
+            <div class="hint-text">下次执行日期: {{ repeatNextDateText }} {{ repeatDueTime }}</div>
           </div>
+          <div class="form-col"></div>
         </div>
 
         <div class="form-row" v-if="form.repeatRule === 'yearly'">
-          <div class="form-col full-width">
-             <label>每年几月几号</label>
-             <div class="month-selector yearly-selector">
-               <select :value="currentYearMonth" @change="setYearlyDate(parseInt($event.target.value), currentYearDate)">
-                 <option v-for="m in yearMonths" :key="m.val" :value="m.val">{{ m.label }}</option>
-               </select>
-               <select :value="currentYearDate" @change="setYearlyDate(currentYearMonth, parseInt($event.target.value))">
-                 <option v-for="d in monthDays" :key="d" :value="d">{{ d }}日</option>
-               </select>
-             </div>
-             <div class="hint-text">
-               下次执行日期: {{ form.dueDate }}
-             </div>
+          <div class="form-col">
+            <label>每年几月几号</label>
+            <div class="month-selector yearly-selector">
+              <select :value="currentYearMonth" @change="setYearlyDate(parseInt($event.target.value), currentYearDate)">
+                <option v-for="m in yearMonths" :key="m.val" :value="m.val">{{ m.label }}</option>
+              </select>
+              <select :value="currentYearDate" @change="setYearlyDate(currentYearMonth, parseInt($event.target.value))">
+                <option v-for="d in monthDays" :key="d" :value="d">{{ d }}日</option>
+              </select>
+            </div>
+            <div class="hint-text">下次执行日期: {{ repeatNextDateText }} {{ repeatDueTime }}</div>
           </div>
+          <div class="form-col"></div>
         </div>
 
         <div class="form-row date-reminder-row">
-          <div class="form-col" ref="datePickerContainer">
-            <div class="inline-label-row">
-              <label>截止日期</label>
-              <span class="switch-placeholder"></span>
-            </div>
-            <div ref="dueTriggerRef" class="select-field date-picker-wrapper" :class="{ open: activeDropdown === 'date' }" @click.stop="toggleDropdown('date')">
-               <i class="ri-calendar-line icon-prefix"></i>
-               <span class="field-text">{{ form.dueDate || '选择日期时间' }}</span>
-               <i v-if="form.dueDate" class="ri-close-circle-fill clear-btn" @click.stop="form.dueDate = ''"></i>
-               <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'date' }"></i>
-            </div>
-          </div>
-
           <div class="form-col" ref="reminderPickerContainer">
             <div class="inline-label-row">
               <label>提醒时间</label>
               <ToggleSwitch v-model="form.reminderEnabled" />
             </div>
-            <div ref="remindAtTriggerRef" class="select-field date-picker-wrapper" :class="{ open: activeDropdown === 'remindAt', disabled: !form.reminderEnabled }" @click.stop="form.reminderEnabled ? toggleDropdown('remindAt') : null">
+            <div
+              v-if="form.repeatRule === 'none'"
+              ref="remindAtTriggerRef"
+              class="select-field date-picker-wrapper"
+              :class="{ open: activeDropdown === 'remindAt', disabled: !form.reminderEnabled }"
+              @click.stop="form.reminderEnabled ? toggleDropdown('remindAt') : null"
+            >
               <i class="ri-alarm-line icon-prefix"></i>
               <span class="field-text">{{ form.remindAt || getRemindAtPlaceholder() }}</span>
               <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
               <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'remindAt' }"></i>
             </div>
+            <div
+              v-else
+              class="select-field date-picker-wrapper"
+              :class="{ disabled: !form.reminderEnabled }"
+              @click.stop="form.reminderEnabled ? openNativeTimePicker('remind') : null"
+            >
+              <i class="ri-alarm-line icon-prefix"></i>
+              <input ref="repeatRemindTimeInputRef" type="time" v-model="repeatRemindTime" :disabled="!form.reminderEnabled" @click.stop>
+              <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
+              <i class="ri-arrow-down-s-line field-arrow"></i>
+            </div>
+          </div>
+
+          <div class="form-col">
+            <label>提前提醒 (分钟)</label>
+            <input
+              type="number"
+              min="0"
+              :disabled="!form.reminderEnabled"
+              :value="form.reminderAdvanceMinutes ?? ''"
+              placeholder="留空使用设置"
+              @input="setReminderAdvanceMinutes($event.target.value)"
+            >
+            <div v-if="form.reminderEnabled" class="hint-text reminder-default-hint">默认提醒时间：{{ getDefaultReminderText() }}</div>
           </div>
         </div>
 
         <div class="form-row reminder-meta-row" v-if="form.reminderEnabled">
-          <div class="form-col">
+          <div class="form-col full-width">
             <div class="meta-label-row">
               <label>通知渠道<span class="required-mark">*</span></label>
               <span v-if="!hasNotifyChannels" class="meta-follow-hint">未选择</span>
@@ -974,17 +1103,6 @@ const onClose = () => {
               </transition>
             </div>
           </div>
-          <div class="form-col">
-            <label>提前提醒 (分钟)</label>
-            <input
-              type="number"
-              min="0"
-              :value="form.reminderAdvanceMinutes ?? ''"
-              placeholder="留空使用设置"
-              @input="setReminderAdvanceMinutes($event.target.value)"
-            >
-            <div class="hint-text reminder-default-hint">默认提醒时间：{{ getDefaultReminderText() }}</div>
-          </div>
         </div>
       </div>
 
@@ -1007,7 +1125,7 @@ const onClose = () => {
     <Teleport to="body">
       <transition name="slide-pull">
         <div
-          v-if="activeDropdown === 'date' || activeDropdown === 'remindAt'"
+          v-if="form.repeatRule === 'none' && (activeDropdown === 'date' || activeDropdown === 'remindAt')"
           ref="floatingPickerRef"
           class="floating-picker-popover"
           :style="floatingPickerStyle"

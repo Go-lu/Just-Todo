@@ -793,7 +793,33 @@ const handleRecurrence = (todo) => {
   const existsActiveNext = todos.value.some(t => t.recurrenceFromId === todo.id && !t.isCompleted);
   if (existsActiveNext) return;
 
+  const extractDatePart = (val) => {
+    if (!val) return '';
+    const s = (val || '').toString();
+    const d = dayjs(s);
+    if (!d.isValid()) return '';
+    return d.format('YYYY-MM-DD');
+  };
+
+  const extractTimePart = (val) => {
+    if (!val) return '';
+    const s = (val || '').toString();
+    if (!s.includes(':')) return '';
+    const d = dayjs(s);
+    if (!d.isValid()) return '';
+    return d.format('HH:mm');
+  };
+
+  const mergeDateAndTime = (dateStr, timeStr) => {
+    if (!dateStr) return '';
+    if (!timeStr) return dateStr;
+    return `${dateStr} ${timeStr}`;
+  };
+
+  const dueTime = extractTimePart(todo.dueDate) || '23:59';
+
   let baseDate = todo.dueDate ? dayjs(todo.dueDate) : dayjs();
+  if (!baseDate.isValid()) baseDate = dayjs();
   let nextDate;
 
   const normalizeWeekDays = (days) => {
@@ -865,12 +891,19 @@ const handleRecurrence = (todo) => {
     }
   }
 
+  const nextDateStr = nextDate.format('YYYY-MM-DD');
+  const nextDueDate = mergeDateAndTime(nextDateStr, dueTime);
+
   let nextRemindAt = todo.remindAt || null;
-  if (todo.remindAt && todo.dueDate) {
-    const r = dayjs(todo.remindAt);
-    const baseDue = dayjs(todo.dueDate);
-    if (r.isValid() && baseDue.isValid() && r.format('YYYY-MM-DD') === baseDue.format('YYYY-MM-DD')) {
-      nextRemindAt = nextDate.hour(r.hour()).minute(r.minute()).second(0).format('YYYY-MM-DD HH:mm');
+  if (todo.remindAt) {
+    const remindTime = extractTimePart(todo.remindAt);
+    if (remindTime) {
+      const baseDueDateStr = extractDatePart(todo.dueDate);
+      const baseRemindDateStr = extractDatePart(todo.remindAt);
+      const isTimeOnly = typeof todo.remindAt === 'string' && /^\d{2}:\d{2}$/.test(todo.remindAt.trim());
+      if (isTimeOnly || (baseRemindDateStr && baseDueDateStr && baseRemindDateStr === baseDueDateStr)) {
+        nextRemindAt = mergeDateAndTime(nextDateStr, remindTime);
+      }
     }
   }
 
@@ -880,7 +913,7 @@ const handleRecurrence = (todo) => {
     recurrenceFromId: todo.id,
     isCompleted: false,
     priority: todo.priority || 'normal',
-    dueDate: nextDate.format('YYYY-MM-DD'),
+    dueDate: nextDueDate,
     remindAt: nextRemindAt,
     createdAt: Date.now(),
     completedAt: null,
