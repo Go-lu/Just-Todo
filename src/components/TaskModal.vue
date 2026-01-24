@@ -50,6 +50,7 @@ const repeatRemindTimeInputRef = ref(null);
 const floatingPickerRef = ref(null);
 const activeDropdown = ref(null);
 const floatingPickerStyle = ref({});
+const saveAttempted = ref(false);
 
 const openNativeTimePicker = (type) => {
   const el = type === 'due' ? repeatDueTimeInputRef.value : repeatRemindTimeInputRef.value;
@@ -458,6 +459,7 @@ watch(() => form.value.reminderEnabled, (enabled) => {
     if (current.length === 0 && notifyChannelOptions.value.some(opt => opt.value === 'desktop')) {
       form.value.notifyChannels = ['desktop'];
     }
+    applyReminderFromDueDate();
     return;
   }
   if (activeDropdown.value === 'remindAt' || activeDropdown.value === 'notifyChannels') {
@@ -480,6 +482,7 @@ watch(
 
 watch(() => props.visible, (val) => {
   if (val) {
+    saveAttempted.value = false;
     nextTick(() => {
       if (contentInput.value) contentInput.value.focus();
     });
@@ -607,18 +610,41 @@ const mergeDateAndTime = (dateStr, timeStr) => {
   return `${dateStr} ${timeStr}`;
 };
 
+function applyReminderFromDueDate() {
+  if (!form.value.reminderEnabled) return;
+  if (form.value.remindAt) return;
+  const dueDateStr = extractDatePart(form.value.dueDate);
+  const dueTime = extractTimePart(form.value.dueDate);
+  if (dueDateStr && dueTime) {
+    form.value.remindAt = mergeDateAndTime(dueDateStr, dueTime);
+  }
+}
+
+const reminderTimeMissing = computed(() => {
+  if (!form.value.reminderEnabled) return false;
+  if (form.value.remindAt) return false;
+  const dueDateStr = extractDatePart(form.value.dueDate);
+  const dueTime = extractTimePart(form.value.dueDate);
+  return !(dueDateStr && dueTime);
+});
+
+const remindAtError = computed(() => saveAttempted.value && reminderTimeMissing.value);
+const notifyChannelsError = computed(() => saveAttempted.value && form.value.reminderEnabled && !hasNotifyChannels.value);
+
 const repeatNextDateText = computed(() => extractDatePart(form.value.dueDate));
 
 const repeatDueTime = computed({
-  get: () => extractTimePart(form.value.dueDate) || '23:59',
+  get: () => extractTimePart(form.value.dueDate) || '',
   set: (time) => {
-    const dateStr = extractDatePart(form.value.dueDate) || dayjs().format('YYYY-MM-DD');
     const t = (time || '').toString();
-    form.value.dueDate = mergeDateAndTime(dateStr, t);
-    if (form.value.repeatRule !== 'none' && form.value.remindAt) {
-      const remindTime = extractTimePart(form.value.remindAt);
-      if (remindTime) form.value.remindAt = mergeDateAndTime(dateStr, remindTime);
+    const dateStr = extractDatePart(form.value.dueDate);
+    if (!t) {
+      form.value.dueDate = dateStr || '';
+      return;
     }
+    form.value.dueDate = mergeDateAndTime(dateStr || dayjs().format('YYYY-MM-DD'), t);
+    updateDueDateBySelection();
+    applyReminderFromDueDate();
   }
 });
 
@@ -640,8 +666,8 @@ const buildCandidateDateTime = (date, timeStr) => {
   const [hhRaw, mmRaw] = t.split(':');
   const hh = Number(hhRaw);
   const mm = Number(mmRaw);
-  const hour = Number.isFinite(hh) ? hh : 23;
-  const minute = Number.isFinite(mm) ? mm : 59;
+  const hour = Number.isFinite(hh) ? hh : 0;
+  const minute = Number.isFinite(mm) ? mm : 0;
   return date.hour(hour).minute(minute).second(0);
 };
 
@@ -653,7 +679,7 @@ const computeNextWeeklyDate = (from, selectedDays, dueTime) => {
   for (let i = 0; i <= 7; i++) {
     const candidate = base.add(i, 'day');
     if (selected.includes(candidate.day())) {
-      const candidateDateTime = buildCandidateDateTime(candidate.clone(), dueTime || '23:59');
+      const candidateDateTime = buildCandidateDateTime(candidate.clone(), dueTime);
       if (candidateDateTime.isSameOrAfter(now)) return candidate.format('YYYY-MM-DD');
     }
   }
@@ -673,7 +699,7 @@ const computeNextMonthlyDate = (from, selectedDays, dueTime) => {
     for (const d of mapped) {
       if (d < baseDay) continue;
       const candidate = monthBase.date(d);
-      const candidateDateTime = buildCandidateDateTime(candidate.clone(), dueTime || '23:59');
+      const candidateDateTime = buildCandidateDateTime(candidate.clone(), dueTime);
       if (candidateDateTime.isSameOrAfter(now)) return candidate;
     }
     return null;
@@ -689,7 +715,8 @@ const computeNextMonthlyDate = (from, selectedDays, dueTime) => {
 };
 
 const updateDueDateBySelection = () => {
-  const time = extractTimePart(form.value.dueDate) || '23:59';
+  const time = extractTimePart(form.value.dueDate);
+  if (!time) return;
   if (form.value.repeatRule === 'weekly') {
     const date = computeNextWeeklyDate(dayjs(), form.value.repeatWeekDays, time);
     form.value.dueDate = mergeDateAndTime(date, time);
@@ -735,15 +762,18 @@ const setYearlyDate = (monthIndex, date) => {
   const daysInMonth = target.daysInMonth();
   target = target.date(Math.min(date, daysInMonth));
   
-  const time = extractTimePart(form.value.dueDate) || '23:59';
-  const candidate = buildCandidateDateTime(target.clone(), time);
+  const time = extractTimePart(form.value.dueDate);
+  const compareTime = time || '00:00';
+  const candidate = buildCandidateDateTime(target.clone(), compareTime);
   
   if (candidate.isBefore(today)) {
     target = target.add(1, 'year');
     const dim = target.daysInMonth();
     if (target.date() > dim) target = target.date(dim);
   }
-  form.value.dueDate = mergeDateAndTime(target.format('YYYY-MM-DD'), time);
+  const dateStr = target.format('YYYY-MM-DD');
+  form.value.dueDate = time ? mergeDateAndTime(dateStr, time) : dateStr;
+  applyReminderFromDueDate();
 };
 
 const toggleMonthDay = (day) => {
@@ -773,12 +803,26 @@ watch(() => form.value.repeatRule, (newVal) => {
     updateDueDateBySelection();
     return;
   }
-  if (newVal !== 'none' && !form.value.dueDate) form.value.dueDate = mergeDateAndTime(dayjs().format('YYYY-MM-DD'), '23:59');
 });
+
+const setCurrentDueTime = () => {
+  const now = dayjs();
+  if (form.value.repeatRule === 'none') {
+    form.value.dueDate = now.format('YYYY-MM-DD HH:mm');
+    activeDropdown.value = null;
+    return;
+  }
+  repeatDueTime.value = now.format('HH:mm');
+  updateDueDateBySelection();
+  applyReminderFromDueDate();
+};
 
 const onSave = () => {
   if (!form.value.content.trim()) return;
+  saveAttempted.value = true;
   if (form.value.reminderEnabled) {
+    applyReminderFromDueDate();
+    if (reminderTimeMissing.value) return;
     const selected = Array.isArray(form.value.notifyChannels) ? form.value.notifyChannels.filter(Boolean) : [];
     if (selected.length === 0) {
       emit('toast', { message: '请选择至少一个通知渠道', type: 'error' });
@@ -795,6 +839,10 @@ const onSave = () => {
   });
   emit('update:visible', false);
 };
+
+watch(() => form.value.dueDate, () => {
+  applyReminderFromDueDate();
+});
 
 const onClose = () => {
   emit('update:visible', false);
@@ -970,7 +1018,10 @@ const onClose = () => {
             </transition>
           </div>
           <div class="form-col" ref="datePickerContainer">
-            <label>截止日期时间</label>
+            <div class="inline-label-row">
+              <label>截止日期时间</label>
+              <button class="text-link-btn" type="button" @click.stop="setCurrentDueTime">使用当前时间</button>
+            </div>
             <div
               v-if="form.repeatRule === 'none'"
               ref="dueTriggerRef"
@@ -1051,18 +1102,22 @@ const onClose = () => {
           <div class="form-col"></div>
         </div>
 
-        <div class="form-row date-reminder-row">
-          <div class="form-col" ref="reminderPickerContainer">
-            <div class="inline-label-row">
+      </div>
+
+      <div class="section-card">
+        <div class="card-title">
+          <span>提醒</span>
+          <ToggleSwitch v-model="form.reminderEnabled" />
+        </div>
+        <div v-if="form.reminderEnabled">
+          <div class="form-row date-reminder-row">
+            <div class="form-col" ref="reminderPickerContainer">
               <label>提醒时间</label>
-              <ToggleSwitch v-model="form.reminderEnabled" />
-            </div>
-            <div v-if="form.reminderEnabled">
               <div
                 v-if="form.repeatRule === 'none'"
                 ref="remindAtTriggerRef"
                 class="select-field date-picker-wrapper"
-                :class="{ open: activeDropdown === 'remindAt' }"
+                :class="{ open: activeDropdown === 'remindAt', 'field-error': remindAtError }"
                 @click.stop="toggleDropdown('remindAt')"
               >
                 <i class="ri-alarm-line icon-prefix"></i>
@@ -1073,6 +1128,7 @@ const onClose = () => {
               <div
                 v-else
                 class="select-field date-picker-wrapper"
+                :class="{ 'field-error': remindAtError }"
                 @click.stop="openNativeTimePicker('remind')"
               >
                 <i class="ri-alarm-line icon-prefix"></i>
@@ -1081,51 +1137,51 @@ const onClose = () => {
                 <i class="ri-arrow-down-s-line field-arrow"></i>
               </div>
             </div>
-          </div>
 
-          <div class="form-col" v-if="form.reminderEnabled">
-            <label>提前提醒 (分钟)</label>
-            <input
-              type="number"
-              min="0"
-              :value="form.reminderAdvanceMinutes ?? ''"
-              placeholder="留空使用设置"
-              @input="setReminderAdvanceMinutes($event.target.value)"
-            >
-            <div v-if="form.reminderEnabled" class="hint-text reminder-default-hint">默认提醒时间：{{ getDefaultReminderText() }}</div>
-          </div>
-        </div>
-
-        <div class="form-row reminder-meta-row" v-if="form.reminderEnabled">
-          <div class="form-col full-width">
-            <div class="meta-label-row">
-              <label>通知渠道<span class="required-mark">*</span></label>
-              <button class="text-link-btn" type="button" @click.stop="openNotifySettings">设置通知渠道</button>
-              <span v-if="!hasNotifyChannels" class="meta-follow-hint">未选择</span>
+            <div class="form-col">
+              <label>提前提醒 (分钟)</label>
+              <input
+                type="number"
+                min="0"
+                :value="form.reminderAdvanceMinutes ?? ''"
+                placeholder="留空使用设置"
+                @input="setReminderAdvanceMinutes($event.target.value)"
+              >
+              <div class="hint-text reminder-default-hint">默认提醒时间：{{ getDefaultReminderText() }}</div>
             </div>
-            <div
-              class="select-field notify-select"
-              :class="{ open: activeDropdown === 'notifyChannels' }"
-              @click.stop="toggleDropdown('notifyChannels')"
-            >
-              <span class="field-text">{{ notifyChannelsText }}</span>
-              <i v-if="hasNotifyChannels" class="ri-close-circle-fill clear-btn" @click.stop="clearNotifyChannels"></i>
-              <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'notifyChannels' }"></i>
-              <transition name="slide-pull">
-                <div class="dropdown-panel notify-dropdown-panel" v-show="activeDropdown === 'notifyChannels'" @click.stop>
-                  <div v-if="notifyChannelOptions.length === 0" class="dropdown-empty">暂无可用渠道</div>
-                  <div
-                    v-for="opt in notifyChannelOptions"
-                    :key="opt.value"
-                    class="dropdown-item notify-item"
-                    :class="{ selected: Array.isArray(form.notifyChannels) && form.notifyChannels.includes(opt.value) }"
-                    @click.stop="toggleNotifyChannel(opt.value)"
-                  >
-                    <i class="ri-check-line check-icon"></i>
-                    <span>{{ opt.label }}</span>
+          </div>
+
+          <div class="form-row reminder-meta-row">
+            <div class="form-col full-width">
+              <div class="meta-label-row">
+                <label>通知渠道<span class="required-mark">*</span></label>
+                <button class="text-link-btn" type="button" @click.stop="openNotifySettings">设置通知渠道</button>
+                <span v-if="!hasNotifyChannels" class="meta-follow-hint">未选择</span>
+              </div>
+              <div
+                class="select-field notify-select"
+                :class="{ open: activeDropdown === 'notifyChannels', 'field-error': notifyChannelsError }"
+                @click.stop="toggleDropdown('notifyChannels')"
+              >
+                <span class="field-text">{{ notifyChannelsText }}</span>
+                <i v-if="hasNotifyChannels" class="ri-close-circle-fill clear-btn" @click.stop="clearNotifyChannels"></i>
+                <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'notifyChannels' }"></i>
+                <transition name="slide-pull">
+                  <div class="dropdown-panel notify-dropdown-panel" v-show="activeDropdown === 'notifyChannels'" @click.stop>
+                    <div v-if="notifyChannelOptions.length === 0" class="dropdown-empty">暂无可用渠道</div>
+                    <div
+                      v-for="opt in notifyChannelOptions"
+                      :key="opt.value"
+                      class="dropdown-item notify-item"
+                      :class="{ selected: Array.isArray(form.notifyChannels) && form.notifyChannels.includes(opt.value) }"
+                      @click.stop="toggleNotifyChannel(opt.value)"
+                    >
+                      <i class="ri-check-line check-icon"></i>
+                      <span>{{ opt.label }}</span>
+                    </div>
                   </div>
-                </div>
-              </transition>
+                </transition>
+              </div>
             </div>
           </div>
         </div>
@@ -1266,6 +1322,10 @@ const onClose = () => {
 }
 .select-field.open {
   z-index: 12;
+}
+.select-field.field-error {
+  border-color: var(--danger-color);
+  box-shadow: 0 0 0 1px var(--danger-color) inset;
 }
 
 .floating-picker-popover {
