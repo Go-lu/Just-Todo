@@ -47,8 +47,12 @@ const notificationSettings = ref({});
 const backupSettings = ref({});
 const enabledNotifyChannels = computed(() => {
   const settings = notificationSettings.value || {};
-  const candidates = ['desktop', 'email', 'bark', 'webhook'];
-  return candidates.filter(key => !!settings?.[key]?.enabled);
+  const next = [];
+  if (settings.desktop?.enabled !== false) next.push('desktop');
+  if (settings.email?.enabled) next.push('email');
+  if (settings.bark?.enabled) next.push('bark');
+  if (settings.webhook?.enabled) next.push('webhook');
+  return next;
 });
 const notifiedTasks = ref(new Set());
 const NOTIFIED_CACHE_KEY = '__justtodo_notified_cache_v1__';
@@ -818,8 +822,10 @@ const handleRecurrence = (todo) => {
 
   const dueTime = extractTimePart(todo.dueDate) || '23:59';
 
-  let baseDate = todo.dueDate ? dayjs(todo.dueDate) : dayjs();
-  if (!baseDate.isValid()) baseDate = dayjs();
+  const now = dayjs();
+  let baseDate = todo.dueDate ? dayjs(todo.dueDate) : now;
+  if (!baseDate.isValid()) baseDate = now;
+  if (baseDate.isBefore(now)) baseDate = now;
   let nextDate;
 
   const normalizeWeekDays = (days) => {
@@ -2439,6 +2445,7 @@ const showExportContextMenu = (event) => {
       :enabled-notify-channels="enabledNotifyChannels"
       @save="handleDrawerSave"
       @toast="handleTaskToast"
+      @open-settings="settingsVisible = true"
     />
 
     <SettingsModal
@@ -2576,6 +2583,7 @@ const showExportContextMenu = (event) => {
       :enabled-notify-channels="enabledNotifyChannels"
       @save="handleTaskSave"
       @toast="handleTaskToast"
+      @open-settings="settingsVisible = true"
     />
 
     <div v-if="reminderPopup.visible" class="reminder-popup-overlay" @click.self="closeReminderPopup">

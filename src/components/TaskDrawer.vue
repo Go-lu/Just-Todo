@@ -38,7 +38,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['update:visible', 'save', 'toast']);
+const emit = defineEmits(['update:visible', 'save', 'toast', 'open-settings']);
 
 const form = ref({
   content: '',
@@ -81,6 +81,10 @@ const removeSubtask = (index) => {
 
 const toggleSubtask = (index) => {
   form.value.subtasks[index].isCompleted = !form.value.subtasks[index].isCompleted;
+};
+
+const openNotifySettings = () => {
+  emit('open-settings');
 };
 
 const attachmentsInputRef = ref(null);
@@ -475,9 +479,28 @@ const clearNotifyChannels = () => {
 };
 
 watch(() => form.value.reminderEnabled, (enabled) => {
-  if (enabled) return;
+  if (enabled) {
+    const current = Array.isArray(form.value.notifyChannels) ? form.value.notifyChannels : [];
+    if (current.length === 0 && notifyChannelOptions.value.some(opt => opt.value === 'desktop')) {
+      form.value.notifyChannels = ['desktop'];
+    }
+    return;
+  }
   if (activeDropdown.value === 'notifyChannels') activeDropdown.value = null;
 });
+
+watch(
+  () => notifyChannelOptions.value,
+  (opts) => {
+    if (!form.value.reminderEnabled) return;
+    const current = Array.isArray(form.value.notifyChannels) ? form.value.notifyChannels : [];
+    if (current.length > 0) return;
+    if (Array.isArray(opts) && opts.some(opt => opt.value === 'desktop')) {
+      form.value.notifyChannels = ['desktop'];
+    }
+  },
+  { immediate: true }
+);
 
 const openDatePicker = () => {
   activeDropdown.value = null;
@@ -1100,36 +1123,35 @@ const onOverlayClick = () => {
                 <label>提醒时间</label>
                 <ToggleSwitch v-model="form.reminderEnabled" />
               </div>
-              <div
-                v-if="form.repeatRule === 'none'"
-                class="select-field date-picker-wrapper"
-                :class="{ disabled: !form.reminderEnabled }"
-                @click.stop="form.reminderEnabled ? openReminderPicker() : null"
-              >
-                <i class="ri-alarm-line icon-prefix"></i>
-                <span class="field-text">{{ form.remindAt || getRemindAtPlaceholder() }}</span>
-                <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
-                <i class="ri-arrow-down-s-line field-arrow"></i>
-              </div>
-              <div
-                v-else
-                class="select-field date-picker-wrapper"
-                :class="{ disabled: !form.reminderEnabled }"
-                @click.stop="form.reminderEnabled ? openNativeTimePicker('remind') : null"
-              >
-                <i class="ri-alarm-line icon-prefix"></i>
-                <input ref="repeatRemindTimeInputRef" type="time" v-model="repeatRemindTime" :disabled="!form.reminderEnabled" @click.stop>
-                <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
-                <i class="ri-arrow-down-s-line field-arrow"></i>
+              <div v-if="form.reminderEnabled">
+                <div
+                  v-if="form.repeatRule === 'none'"
+                  class="select-field date-picker-wrapper"
+                  @click.stop="openReminderPicker()"
+                >
+                  <i class="ri-alarm-line icon-prefix"></i>
+                  <span class="field-text">{{ form.remindAt || getRemindAtPlaceholder() }}</span>
+                  <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
+                  <i class="ri-arrow-down-s-line field-arrow"></i>
+                </div>
+                <div
+                  v-else
+                  class="select-field date-picker-wrapper"
+                  @click.stop="openNativeTimePicker('remind')"
+                >
+                  <i class="ri-alarm-line icon-prefix"></i>
+                  <input ref="repeatRemindTimeInputRef" type="time" v-model="repeatRemindTime" @click.stop>
+                  <i v-if="form.remindAt" class="ri-close-circle-fill clear-btn" @click.stop="form.remindAt = ''"></i>
+                  <i class="ri-arrow-down-s-line field-arrow"></i>
+                </div>
               </div>
             </div>
 
-            <div class="form-col">
+            <div class="form-col" v-if="form.reminderEnabled">
               <label>提前提醒 (分钟)</label>
               <input
                 type="number"
                 min="0"
-                :disabled="!form.reminderEnabled"
                 :value="form.reminderAdvanceMinutes ?? ''"
                 placeholder="留空使用设置"
                 @input="setReminderAdvanceMinutes($event.target.value)"
@@ -1142,6 +1164,7 @@ const onOverlayClick = () => {
             <div class="form-col full-width">
               <div class="meta-label-row">
                 <label>通知渠道<span class="required-mark">*</span></label>
+                <button class="text-link-btn" type="button" @click.stop="openNotifySettings">设置通知渠道</button>
                 <span v-if="!hasNotifyChannels" class="meta-follow-hint">未选择</span>
               </div>
               <div
@@ -1154,6 +1177,7 @@ const onOverlayClick = () => {
                 <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'notifyChannels' }"></i>
                 <transition name="slide-pull">
                   <div class="dropdown-panel" v-show="activeDropdown === 'notifyChannels'" @click.stop>
+                    <div v-if="notifyChannelOptions.length === 0" class="dropdown-empty">暂无可用渠道</div>
                     <div
                       v-for="opt in notifyChannelOptions"
                       :key="opt.value"
@@ -1717,6 +1741,16 @@ const onOverlayClick = () => {
   margin-top: 8px;
 }
 
+.date-picker-wrapper input[type="time"] {
+  border: none;
+  background: transparent;
+  padding: 0;
+  flex: 1;
+  color: var(--text-color);
+  font-size: 14px;
+  outline: none;
+}
+
 .notify-select .field-text {
   white-space: nowrap;
   overflow: hidden;
@@ -1727,6 +1761,19 @@ const onOverlayClick = () => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.text-link-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  color: var(--primary-color);
+  cursor: pointer;
+}
+
+.text-link-btn:hover {
+  text-decoration: underline;
 }
 
 .meta-follow-hint {
@@ -1749,6 +1796,12 @@ const onOverlayClick = () => {
       opacity: 1;
     }
   }
+}
+
+.dropdown-empty {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--secondary-text);
 }
 
 label {
