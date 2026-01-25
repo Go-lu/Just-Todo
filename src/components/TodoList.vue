@@ -29,10 +29,10 @@ const props = defineProps({
 
 // Explicitly define emits to avoid warnings
 const emit = defineEmits([
-  'update:todos', 
-  'open-add-task', 
-  'update-todo', 
-  'context-menu', 
+  'update:todos',
+  'open-add-task',
+  'update-todo',
+  'context-menu',
   'item-click'
 ]);
 
@@ -46,14 +46,14 @@ const showAttachments = (id, attachments, event) => {
   if (attachmentHoverTimeout) clearTimeout(attachmentHoverTimeout);
   hoveredAttachmentId.value = id;
   hoveredAttachmentsList.value = attachments || [];
-  
+
   // Calculate position
   const target = event.target.closest('.attachment-icon-wrapper');
   if (target) {
     const rect = target.getBoundingClientRect();
     dropdownPosition.value = {
-        top: `${rect.bottom + 4}px`,
-        right: `${window.innerWidth - rect.right}px`
+      top: `${rect.bottom + 4}px`,
+      right: `${window.innerWidth - rect.right}px`
     };
   }
 };
@@ -126,7 +126,7 @@ const openPreview = async (att) => {
   previewText.value = '';
   previewEncoding.value = 'utf-8';
   previewBytes.value = null;
-  
+
   if (isTextAttachment(att) && att?.dataUrl) {
     try {
       const bytes = dataUrlToUint8Array(att.dataUrl);
@@ -136,7 +136,7 @@ const openPreview = async (att) => {
       previewText.value = '预览失败';
     }
   }
-  
+
   previewVisible.value = true;
   // Hide dropdown
   hoveredAttachmentId.value = null;
@@ -237,7 +237,7 @@ const formatRepeatRule = (todo) => {
     normalized.sort((a, b) => a - b);
     return normalized.join(',');
   };
-  
+
   switch (todo.repeatRule) {
     case 'daily': return '每天';
     case 'weekly': {
@@ -266,25 +266,25 @@ const getCategoryName = (id) => {
 };
 
 // Helper for Overdue
-    const isOverdue = (todo) => {
-      if (!todo.dueDate || todo.isCompleted) return false;
-      // If has time (length > 10, e.g., "YYYY-MM-DD HH:mm"), compare exact time
-      if (todo.dueDate.length > 10) {
-        return dayjs(todo.dueDate).isBefore(dayjs());
-      }
-      // If date only, compare day
-      return dayjs(todo.dueDate).isBefore(dayjs(), 'day');
-    };
+const isOverdue = (todo) => {
+  if (!todo.dueDate || todo.isCompleted) return false;
+  // If has time (length > 10, e.g., "YYYY-MM-DD HH:mm"), compare exact time
+  if (todo.dueDate.length > 10) {
+    return dayjs(todo.dueDate).isBefore(dayjs());
+  }
+  // If date only, compare day
+  return dayjs(todo.dueDate).isBefore(dayjs(), 'day');
+};
 
-    const formatDueDate = (dueDate) => {
-      if (!dueDate) return '';
-      // If has time, show MM-DD HH:mm
-      if (dueDate.length > 10) {
-        return dayjs(dueDate).format('MM-DD HH:mm');
-      }
-      // Date only
-      return dayjs(dueDate).format('MM-DD');
-    };
+const formatDueDate = (dueDate) => {
+  if (!dueDate) return '';
+  // If has time, show MM-DD HH:mm
+  if (dueDate.length > 10) {
+    return dayjs(dueDate).format('MM-DD HH:mm');
+  }
+  // Date only
+  return dayjs(dueDate).format('MM-DD');
+};
 
 const formatRemindAt = (remindAt) => {
   if (!remindAt) return '';
@@ -295,17 +295,17 @@ const formatRemindAt = (remindAt) => {
   if (raw.length > 10) return d.format('MM-DD HH:mm');
   return d.format('MM-DD');
 };
-    
-    // Grouping Logic
+
+// Grouping Logic
 const displayGroups = computed(() => {
   const groups = [];
   const list = props.todos;
-  
+
   // 1. If custom sort is active (and not default), show single list (or maybe separate active/completed?)
   // User asked for sorting. If sorting is enabled, grouping might still be relevant?
   // User request: "Plan module group by date", "All/Completed/Today group by category", "My List active + completed collapsed".
   // Let's assume grouping takes precedence, and sort applies WITHIN groups.
-  
+
   if (props.stickyMode && props.categoryId === 'all') {
     const todayItems = [];
     const urgentItems = [];
@@ -374,7 +374,7 @@ const displayGroups = computed(() => {
       { id: 'low', name: '低', color: '#52c41a' },
       { id: 'normal', name: '无', color: 'var(--secondary-text)' }
     ];
-    
+
     priorities.forEach(p => {
       const items = list.filter(t => (t.priority || 'normal') === p.id);
       if (items.length > 0) {
@@ -388,7 +388,7 @@ const displayGroups = computed(() => {
         });
       }
     });
-    
+
   } else if (props.categoryId === 'plan') {
     // Date Grouping
     // Sort by date first (App.vue does this)
@@ -397,7 +397,7 @@ const displayGroups = computed(() => {
       let key = 'no-date';
       let title = '无日期';
       let sortKey = 9999999999999;
-      
+
       if (t.dueDate) {
         const d = dayjs(t.dueDate);
         key = d.format('YYYY-MM-DD');
@@ -407,17 +407,17 @@ const displayGroups = computed(() => {
         else title = d.format('MM月DD日 dddd');
         sortKey = d.valueOf();
       }
-      
+
       if (!map.has(key)) {
         map.set(key, { id: key, title, items: [], sortKey });
       }
       map.get(key).items.push(t);
     });
-    
+
     // Convert to array and sort groups
     const sortedGroups = Array.from(map.values()).sort((a, b) => a.sortKey - b.sortKey);
     groups.push(...sortedGroups);
-    
+
   } else if (['all', 'today', 'completed'].includes(props.categoryId)) {
     // Category Grouping
     const map = new Map();
@@ -428,7 +428,7 @@ const displayGroups = computed(() => {
       }
       map.get(catId).items.push(t);
     });
-    
+
     // Sort groups by category order maybe?
     // Using props.categories order
     const sortedGroups = [];
@@ -446,16 +446,16 @@ const displayGroups = computed(() => {
         sortedGroups.push(val);
       }
     });
-    
+
     groups.push(...sortedGroups);
-    
+
   } else {
     // Custom Category (My List)
     // Active Tasks
     const active = list.filter(t => !t.isCompleted);
     // Completed Tasks
     const completed = list.filter(t => t.isCompleted);
-    
+
     if (active.length > 0 || completed.length > 0) {
       if (active.length > 0 || completed.length === 0) {
         groups.push({
@@ -466,7 +466,7 @@ const displayGroups = computed(() => {
           count: active.length
         });
       }
-      
+
       if (completed.length > 0) {
         groups.push({
           id: 'completed',
@@ -479,7 +479,7 @@ const displayGroups = computed(() => {
       }
     }
   }
-  
+
   return groups;
 });
 
@@ -542,12 +542,13 @@ const updateScrollState = () => {
     const diff = container.scrollHeight - container.clientHeight;
     scrollEnabled.value = diff > 16;
     if (!scrollEnabled.value) {
-      try { container.scrollTop = 0 } catch (e) {}
+      try { container.scrollTop = 0 } catch (e) { }
     }
   });
 };
 
 const onWheel = (e) => {
+  if (previewVisible.value) return;
   if (!scrollEnabled.value) {
     e.preventDefault();
     e.stopPropagation();
@@ -581,7 +582,7 @@ const onKeydown = (e) => {
 onMounted(() => {
   window.addEventListener('keydown', onKeydown);
   if (props.categoryId !== 'all' && props.categoryId !== 'today' && props.categoryId !== 'plan' && props.categoryId !== 'urgent' && props.categoryId !== 'completed') {
-     collapsedGroups.value['completed'] = true;
+    collapsedGroups.value['completed'] = true;
   }
   updateAxisBounds();
   updateScrollState();
@@ -638,7 +639,7 @@ const toggleSubtaskComplete = (todo, index) => {
   if (!todo.subtasks) return;
   const newSubtasks = [...todo.subtasks];
   newSubtasks[index].isCompleted = !newSubtasks[index].isCompleted;
-  
+
   // Create a copy of the todo to update
   const newTodo = { ...todo, subtasks: newSubtasks };
   emit('update-todo', newTodo);
@@ -697,49 +698,38 @@ const leaveCancelled = (el) => {
   <div class="todo-list-container" @wheel="onWheel">
     <!-- Header removed as per request -->
 
-    <div class="groups-container" ref="groupsRef" :style="{ overflowY: scrollEnabled ? 'auto' : 'hidden' }" @wheel="onWheel">
+    <div class="groups-container" ref="groupsRef" :style="{ overflowY: scrollEnabled ? 'auto' : 'hidden' }"
+      @wheel="onWheel">
       <div class="timeline-content" ref="timelineRef">
         <div class="timeline-axis" :style="axisStyle"></div>
         <div v-for="group in displayGroups" :key="group.id" class="group-section">
-        <!-- Group Header -->
-        <div 
-          v-if="!group.noHeader" 
-          class="group-header" 
-          :class="{ 
+          <!-- Group Header -->
+          <div v-if="!group.noHeader" class="group-header" :class="{
             'clickable': group.isCollapsible || categoryId === 'plan' || ['all', 'today', 'completed'].includes(categoryId),
             'sticky-today': props.stickyMode && group.id === 'sticky-today',
             'sticky-urgent': props.stickyMode && group.id === 'sticky-urgent',
           }"
-          @click="(group.isCollapsible || categoryId === 'plan' || ['all', 'today', 'completed'].includes(categoryId)) ? toggleGroup(group.id) : null"
-        >
-           <div class="header-left">
-             <i 
-               v-if="group.isCollapsible || categoryId === 'plan' || ['all', 'today', 'completed'].includes(categoryId)" 
-               class="ri-arrow-right-s-line arrow-icon"
-               :class="{ rotated: !collapsedGroups[group.id] }"
-             ></i>
-             <span class="group-title" :style="{ color: group.color }">{{ group.title }}</span>
-             <span class="group-count">{{ group.items.length }}</span>
-           </div>
-           <div v-if="isStickyCategoryGroup(group.id)" class="header-right">
-             <button class="group-add-btn" title="新建待办" @click.stop="openAddForGroup(group.id)">
-               <i class="ri-add-line"></i>
-             </button>
-           </div>
-        </div>
+            @click="(group.isCollapsible || categoryId === 'plan' || ['all', 'today', 'completed'].includes(categoryId)) ? toggleGroup(group.id) : null">
+            <div class="header-left">
+              <i v-if="group.isCollapsible || categoryId === 'plan' || ['all', 'today', 'completed'].includes(categoryId)"
+                class="ri-arrow-right-s-line arrow-icon" :class="{ rotated: !collapsedGroups[group.id] }"></i>
+              <span class="group-title" :style="{ color: group.color }">{{ group.title }}</span>
+              <span class="group-count">{{ group.items.length }}</span>
+            </div>
+            <div v-if="isStickyCategoryGroup(group.id)" class="header-right">
+              <button class="group-add-btn" title="新建待办" @click.stop="openAddForGroup(group.id)">
+                <i class="ri-add-line"></i>
+              </button>
+            </div>
+          </div>
 
-        <!-- Group List -->
-        <div v-show="!collapsedGroups[group.id]" class="group-list">
-           <!-- Use Draggable only if it's the 'active' group in Custom Category and NOT sorting -->
-           <draggable 
-             v-if="group.id === 'active' && !isCustomSort && !['all', 'today', 'plan', 'urgent', 'completed'].includes(categoryId)"
-             :list="group.items"
-             item-key="id" 
-             class="todo-list-draggable"
-             handle=".drag-handle"
-             animation="300"
-             @end="(e) => emit('update:todos', props.todos)" 
-           >
+          <!-- Group List -->
+          <div v-show="!collapsedGroups[group.id]" class="group-list">
+            <!-- Use Draggable only if it's the 'active' group in Custom Category and NOT sorting -->
+            <draggable
+              v-if="group.id === 'active' && !isCustomSort && !['all', 'today', 'plan', 'urgent', 'completed'].includes(categoryId)"
+              :list="group.items" item-key="id" class="todo-list-draggable" handle=".drag-handle" animation="300"
+              @end="(e) => emit('update:todos', props.todos)">
               <!-- Note: Draggable directly mutating prop array might be tricky if we split it. 
                    If we split, we can't easily drag to reorder the main array unless we map back.
                    However, for custom category, 'active' IS the main list minus completed.
@@ -755,95 +745,67 @@ const leaveCancelled = (el) => {
                    So let's use standard list for now.
               -->
               <template #item="{ element }">
-                <div 
-                  class="todo-item" 
-                  :class="{ 
-                    completed: element.isCompleted,
-                    'is-hovering': hoveredKey === `${group.id}:${element.id}`,
-                    'has-drag-handle': true
-                  }"
-                  @contextmenu="onContextMenu($event, element)"
-                  @mouseleave="hideSubtasks"
-                >
+                <div class="todo-item" :class="{
+                  completed: element.isCompleted,
+                  'is-hovering': hoveredKey === `${group.id}:${element.id}`,
+                  'has-drag-handle': true
+                }" @contextmenu="onContextMenu($event, element)" @mouseleave="hideSubtasks">
                   <div class="todo-main-row">
                     <span class="drag-handle">⋮⋮</span>
                     <div class="checkbox-wrapper" @click.stop="toggleComplete(element, $event)">
-                      <div 
-                        class="custom-checkbox"
-                        :class="{ 'checked': element.isCompleted }"
-                        :style="{ borderColor: element.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }"
-                      >
+                      <div class="custom-checkbox" :class="{ 'checked': element.isCompleted }"
+                        :style="{ borderColor: element.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }">
                         <i v-if="element.isCompleted" class="ri-check-line" style="color: white; font-size: 14px;"></i>
                       </div>
                     </div>
                     <div class="todo-content" @click="emit('item-click', element)">
                       <div class="content-main">
                         <span class="text">{{ element.content }}</span>
-                        <span v-if="element.priority && element.priority !== 'normal'" class="priority-badge" :class="element.priority">
+                        <span v-if="element.priority && element.priority !== 'normal'" class="priority-badge"
+                          :class="element.priority">
                           {{ element.priority === 'high' ? '高' : element.priority === 'medium' ? '中' : '低' }}
                         </span>
                       </div>
-                      <div class="meta" v-if="element.dueDate || (element.reminderEnabled !== false && element.remindAt) || element.repeatRule || element.description || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
-                         <span v-if="element.description" class="meta-tag has-desc" title="有备注">
-                           <i class="ri-sticky-note-line"></i>
-                         </span>
+                      <div class="meta"
+                        v-if="element.dueDate || (element.reminderEnabled !== false && element.remindAt) || element.repeatRule || element.description || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
+                        <span v-if="element.description" class="meta-tag has-desc" title="有备注">
+                          <i class="ri-sticky-note-line"></i>
+                        </span>
 
-                         <span 
-                           v-if="element.subtasks && element.subtasks.length > 0" 
-                           class="meta-tag subtask-tag" 
-                           title="子任务"
-                           @mouseenter="showSubtasks(group.id, element.id)"
-                         >
-                           <i class="ri-list-check"></i> {{ getSubtaskProgress(element) }}
-                         </span>
-                         <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
-                           <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
-                         </span>
-                         <span v-if="element.reminderEnabled !== false && element.remindAt" class="meta-tag">
-                           <i class="ri-alarm-line"></i> {{ formatRemindAt(element.remindAt) }}
-                         </span>
-                         <span v-if="element.repeatRule" class="meta-tag">
-                           <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
-                         </span>
-                         <div 
-                           v-if="element.attachments && element.attachments.length > 0"
-                           class="attachment-icon-wrapper"
-                           @mouseenter="(e) => showAttachments(element.id, element.attachments, e)"
-                           @mouseleave="hideAttachments"
-                         >
-                             <i class="ri-attachment-line"></i>
-                             <span class="count">{{ element.attachments.length }}</span>
-                         </div>
+                        <span v-if="element.subtasks && element.subtasks.length > 0" class="meta-tag subtask-tag"
+                          title="子任务" @mouseenter="showSubtasks(group.id, element.id)">
+                          <i class="ri-list-check"></i> {{ getSubtaskProgress(element) }}
+                        </span>
+                        <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
+                          <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
+                        </span>
+                        <span v-if="element.reminderEnabled !== false && element.remindAt" class="meta-tag">
+                          <i class="ri-alarm-line"></i> {{ formatRemindAt(element.remindAt) }}
+                        </span>
+                        <span v-if="element.repeatRule" class="meta-tag">
+                          <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
+                        </span>
+                        <div v-if="element.attachments && element.attachments.length > 0"
+                          class="attachment-icon-wrapper"
+                          @mouseenter="(e) => showAttachments(element.id, element.attachments, e)"
+                          @mouseleave="hideAttachments">
+                          <i class="ri-attachment-line"></i>
+                          <span class="count">{{ element.attachments.length }}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <Transition
-                    @before-enter="beforeEnter"
-                    @enter="enter"
-                    @after-enter="afterEnter"
-                    @enter-cancelled="enterCancelled"
-                    @leave="leave"
-                    @leave-cancelled="leaveCancelled"
-                  >
-                    <div 
+                  <Transition @before-enter="beforeEnter" @enter="enter" @after-enter="afterEnter"
+                    @enter-cancelled="enterCancelled" @leave="leave" @leave-cancelled="leaveCancelled">
+                    <div
                       v-if="hoveredKey === `${group.id}:${element.id}` && element.subtasks && element.subtasks.length > 0"
-                      class="subtask-expansion-wrapper"
-                      :data-subtask-key="`${group.id}:${element.id}`"
-                      @click.stop
-                    >
+                      class="subtask-expansion-wrapper" :data-subtask-key="`${group.id}:${element.id}`" @click.stop>
                       <div class="subtask-inner-panel">
-                        <div 
-                          v-for="(sub, idx) in element.subtasks" 
-                          :key="idx" 
-                          class="hover-subtask-item"
-                          @click="toggleSubtaskComplete(element, idx)"
-                        >
-                          <div 
-                            class="subtask-circle" 
-                            :class="{ checked: sub.isCompleted }"
-                            :style="{ borderColor: sub.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }"
-                          >
+                        <div v-for="(sub, idx) in element.subtasks" :key="idx" class="hover-subtask-item"
+                          @click="toggleSubtaskComplete(element, idx)">
+                          <div class="subtask-circle" :class="{ checked: sub.isCompleted }"
+                            :style="{ borderColor: sub.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }">
                             <i v-if="sub.isCompleted" class="ri-check-line"></i>
                           </div>
                           <span :class="{ done: sub.isCompleted }">
@@ -855,123 +817,94 @@ const leaveCancelled = (el) => {
                   </Transition>
                 </div>
               </template>
-           </draggable>
+            </draggable>
 
-           <!-- Non-draggable List -->
-           <div v-else>
-             <div 
-                v-for="element in group.items" 
-                :key="element.id" 
-                class="todo-item" 
-                :class="{ 
-                  completed: element.isCompleted,
-                  'is-hovering': hoveredKey === `${group.id}:${element.id}`,
-                  'has-drag-handle': (!isCustomSort && group.id === 'active' && !['all', 'today', 'plan', 'urgent', 'completed'].includes(categoryId))
-                }"
-                @contextmenu="onContextMenu($event, element)"
-                @mouseleave="hideSubtasks"
-              >
-               <div class="todo-main-row">
-                 <span class="drag-handle" v-if="!isCustomSort && group.id === 'active' && !['all', 'today', 'plan', 'urgent', 'completed'].includes(categoryId)">⋮⋮</span>
-                 <div class="checkbox-wrapper" @click.stop="toggleComplete(element, $event)">
-                   <div 
-                     class="custom-checkbox"
-                     :class="{ 'checked': element.isCompleted }"
-                     :style="{ borderColor: element.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }"
-                   >
-                     <i v-if="element.isCompleted" class="ri-check-line" style="color: white; font-size: 14px;"></i>
-                   </div>
-                 </div>
-                 <div class="todo-content" @click="emit('item-click', element)">
-                   <div class="content-main">
-                     <span class="text">{{ element.content }}</span>
-                     <span v-if="element.priority && element.priority !== 'normal'" class="priority-badge" :class="element.priority">
-                       {{ element.priority === 'high' ? '高' : element.priority === 'medium' ? '中' : '低' }}
-                     </span>
-                   </div>
-                  <div class="meta" v-if="element.dueDate || (element.reminderEnabled !== false && element.remindAt) || element.repeatRule || element.description || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
-                         <span v-if="element.description" class="meta-tag has-desc" title="有备注">
-                           <i class="ri-sticky-note-line"></i>
-                         </span>
-                 <span 
-                   v-if="element.subtasks && element.subtasks.length > 0" 
-                   class="meta-tag subtask-tag" 
-                   title="子任务"
-                   @mouseenter="showSubtasks(group.id, element.id)"
-                 >
-                   <i class="ri-list-check"></i> {{ getSubtaskProgress(element) }}
-                 </span>
-                     <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
-                       <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
-                     </span>
-                     <span v-if="element.reminderEnabled !== false && element.remindAt" class="meta-tag">
-                       <i class="ri-alarm-line"></i> {{ formatRemindAt(element.remindAt) }}
-                     </span>
-                     <span v-if="element.repeatRule && !element.isCompleted" class="meta-tag">
-                       <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
-                     </span>
-                     <span v-if="element.completedAt" class="meta-tag completed-time">
-                       <i class="ri-check-double-line"></i> {{ dayjs(element.completedAt).format('MM-DD HH:mm') }}
-                     </span>
-                     <div 
-                       v-if="element.attachments && element.attachments.length > 0"
-                       class="attachment-icon-wrapper"
-                       @mouseenter="(e) => showAttachments(element.id, element.attachments, e)"
-                       @mouseleave="hideAttachments"
-                     >
-                         <i class="ri-attachment-line"></i>
-                         <span class="count">{{ element.attachments.length }}</span>
-                     </div>
+            <!-- Non-draggable List -->
+            <div v-else>
+              <div v-for="element in group.items" :key="element.id" class="todo-item" :class="{
+                completed: element.isCompleted,
+                'is-hovering': hoveredKey === `${group.id}:${element.id}`,
+                'has-drag-handle': (!isCustomSort && group.id === 'active' && !['all', 'today', 'plan', 'urgent', 'completed'].includes(categoryId))
+              }" @contextmenu="onContextMenu($event, element)" @mouseleave="hideSubtasks">
+                <div class="todo-main-row">
+                  <span class="drag-handle"
+                    v-if="!isCustomSort && group.id === 'active' && !['all', 'today', 'plan', 'urgent', 'completed'].includes(categoryId)">⋮⋮</span>
+                  <div class="checkbox-wrapper" @click.stop="toggleComplete(element, $event)">
+                    <div class="custom-checkbox" :class="{ 'checked': element.isCompleted }"
+                      :style="{ borderColor: element.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }">
+                      <i v-if="element.isCompleted" class="ri-check-line" style="color: white; font-size: 14px;"></i>
+                    </div>
+                  </div>
+                  <div class="todo-content" @click="emit('item-click', element)">
+                    <div class="content-main">
+                      <span class="text">{{ element.content }}</span>
+                      <span v-if="element.priority && element.priority !== 'normal'" class="priority-badge"
+                        :class="element.priority">
+                        {{ element.priority === 'high' ? '高' : element.priority === 'medium' ? '中' : '低' }}
+                      </span>
+                    </div>
+                    <div class="meta"
+                      v-if="element.dueDate || (element.reminderEnabled !== false && element.remindAt) || element.repeatRule || element.description || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
+                      <span v-if="element.description" class="meta-tag has-desc" title="有备注">
+                        <i class="ri-sticky-note-line"></i>
+                      </span>
+                      <span v-if="element.subtasks && element.subtasks.length > 0" class="meta-tag subtask-tag"
+                        title="子任务" @mouseenter="showSubtasks(group.id, element.id)">
+                        <i class="ri-list-check"></i> {{ getSubtaskProgress(element) }}
+                      </span>
+                      <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
+                        <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
+                      </span>
+                      <span v-if="element.reminderEnabled !== false && element.remindAt" class="meta-tag">
+                        <i class="ri-alarm-line"></i> {{ formatRemindAt(element.remindAt) }}
+                      </span>
+                      <span v-if="element.repeatRule && !element.isCompleted" class="meta-tag">
+                        <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
+                      </span>
+                      <span v-if="element.completedAt" class="meta-tag completed-time">
+                        <i class="ri-check-double-line"></i> {{ dayjs(element.completedAt).format('MM-DD HH:mm') }}
+                      </span>
+                      <div v-if="element.attachments && element.attachments.length > 0" class="attachment-icon-wrapper"
+                        @mouseenter="(e) => showAttachments(element.id, element.attachments, e)"
+                        @mouseleave="hideAttachments">
+                        <i class="ri-attachment-line"></i>
+                        <span class="count">{{ element.attachments.length }}</span>
+                      </div>
 
-                   </div>
-                 </div>
-               </div>
-
-              <Transition
-                @before-enter="beforeEnter"
-                @enter="enter"
-                @after-enter="afterEnter"
-                @enter-cancelled="enterCancelled"
-                @leave="leave"
-                @leave-cancelled="leaveCancelled"
-              >
-                <div 
-                  v-if="hoveredKey === `${group.id}:${element.id}` && element.subtasks && element.subtasks.length > 0"
-                  class="subtask-expansion-wrapper"
-                  :data-subtask-key="`${group.id}:${element.id}`"
-                  @click.stop
-                >
-                  <div class="subtask-inner-panel">
-                    <div 
-                      v-for="(sub, idx) in element.subtasks" 
-                      :key="idx" 
-                      class="hover-subtask-item"
-                      @click="toggleSubtaskComplete(element, idx)"
-                    >
-                       <div 
-                         class="subtask-circle" 
-                         :class="{ checked: sub.isCompleted }"
-                         :style="{ borderColor: sub.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }"
-                       >
-                         <i v-if="sub.isCompleted" class="ri-check-line"></i>
-                       </div>
-                       <span :class="{ done: sub.isCompleted }">
-                         <span class="subtask-index">{{ idx + 1 }}.</span> {{ sub.content }}
-                       </span>
                     </div>
                   </div>
                 </div>
-              </Transition>
-             </div>
-           </div>
+
+                <Transition @before-enter="beforeEnter" @enter="enter" @after-enter="afterEnter"
+                  @enter-cancelled="enterCancelled" @leave="leave" @leave-cancelled="leaveCancelled">
+                  <div
+                    v-if="hoveredKey === `${group.id}:${element.id}` && element.subtasks && element.subtasks.length > 0"
+                    class="subtask-expansion-wrapper" :data-subtask-key="`${group.id}:${element.id}`" @click.stop>
+                    <div class="subtask-inner-panel">
+                      <div v-for="(sub, idx) in element.subtasks" :key="idx" class="hover-subtask-item"
+                        @click="toggleSubtaskComplete(element, idx)">
+                        <div class="subtask-circle" :class="{ checked: sub.isCompleted }"
+                          :style="{ borderColor: sub.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }">
+                          <i v-if="sub.isCompleted" class="ri-check-line"></i>
+                        </div>
+                        <span :class="{ done: sub.isCompleted }">
+                          <span class="subtask-index">{{ idx + 1 }}.</span> {{ sub.content }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+            </div>
+          </div>
+          <div v-if="props.stickyMode && props.categoryId === 'all' && group.id === 'sticky-urgent'"
+            class="sticky-group-separator"></div>
         </div>
-        <div v-if="props.stickyMode && props.categoryId === 'all' && group.id === 'sticky-urgent'" class="sticky-group-separator"></div>
-      </div>
-      
-      <div v-if="displayGroups.length === 0" class="empty-state">
-        <i class="ri-checkbox-circle-line" style="font-size: 48px; opacity: 0.2; margin-bottom: 10px;"></i>
-        <div>暂无待办事项</div>
-      </div>
+
+        <div v-if="displayGroups.length === 0" class="empty-state">
+          <i class="ri-checkbox-circle-line" style="font-size: 48px; opacity: 0.2; margin-bottom: 10px;"></i>
+          <div>暂无待办事项</div>
+        </div>
       </div>
     </div>
 
@@ -980,49 +913,35 @@ const leaveCancelled = (el) => {
     </div>
 
     <!-- Global Attachment Dropdown -->
-    <div 
-      v-if="hoveredAttachmentId && hoveredAttachmentsList.length > 0" 
-      class="global-attachment-dropdown"
-      :style="dropdownPosition"
-      @mouseenter="cancelHideAttachments" 
-      @mouseleave="hideAttachments"
-    >
-       <div 
-         v-for="att in hoveredAttachmentsList" 
-         :key="att.id" 
-         class="attachment-item"
-         @click.stop="openPreview(att)"
-       >
-         <i :class="getAttachmentIcon(att)"></i>
-         <span class="att-name">{{ att.name }}</span>
-       </div>
+    <div v-if="hoveredAttachmentId && hoveredAttachmentsList.length > 0" class="global-attachment-dropdown"
+      :style="dropdownPosition" @mouseenter="cancelHideAttachments" @mouseleave="hideAttachments">
+      <div v-for="att in hoveredAttachmentsList" :key="att.id" class="attachment-item" @click.stop="openPreview(att)">
+        <i :class="getAttachmentIcon(att)"></i>
+        <span class="att-name">{{ att.name }}</span>
+      </div>
     </div>
 
     <!-- Preview Modal -->
-    <div v-if="previewVisible" class="preview-overlay" @click.self="closePreview">
+    <div v-if="previewVisible" class="preview-overlay" @click.self="closePreview" @wheel.stop>
       <div class="preview-box">
         <div class="preview-header">
           <div class="preview-title-block">
             <span class="preview-title">{{ previewAttachment?.name }}</span>
-            <select 
-              v-if="isTextAttachment(previewAttachment)" 
-              v-model="previewEncoding" 
-              @change="changeEncoding"
-              class="encoding-select"
-            >
+            <select v-if="isTextAttachment(previewAttachment)" v-model="previewEncoding" @change="changeEncoding"
+              class="encoding-select">
               <option v-for="opt in encodingOptions" :key="opt.value" :value="opt.value">
                 {{ opt.label }}
               </option>
             </select>
           </div>
           <div class="preview-actions">
-              <button class="preview-download-btn" @click="downloadAttachment(previewAttachment)">
-                <i class="ri-download-2-line"></i> 下载
-              </button>
-              <button class="preview-close-btn" @click="closePreview"><i class="ri-close-line"></i></button>
+            <button class="preview-download-btn" @click="downloadAttachment(previewAttachment)">
+              <i class="ri-download-2-line"></i> 下载
+            </button>
+            <button class="preview-close-btn" @click="closePreview"><i class="ri-close-line"></i></button>
           </div>
         </div>
-        <div class="preview-body">
+        <div class="preview-body" @wheel.stop>
           <img v-if="isImageAttachment(previewAttachment)" :src="previewAttachment.dataUrl" class="preview-image" />
           <pre v-else-if="isTextAttachment(previewAttachment)" class="preview-text">{{ previewText }}</pre>
           <div v-else class="preview-empty">
@@ -1069,6 +988,7 @@ const leaveCancelled = (el) => {
     min-height: 100%;
     box-sizing: border-box;
   }
+
   .timeline-axis {
     position: absolute;
     left: 6px;
@@ -1084,11 +1004,12 @@ const leaveCancelled = (el) => {
   position: relative;
   z-index: 1;
 }
+
 .group-section:last-child {
   margin-bottom: 0;
 }
 
-  .group-header {
+.group-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1096,8 +1017,9 @@ const leaveCancelled = (el) => {
   padding: 6px 0;
   user-select: none;
   position: relative;
-  padding-left: 8px; /* Space for dot */
-  
+  padding-left: 8px;
+  /* Space for dot */
+
   /* Timeline Dot */
   &::before {
     content: '';
@@ -1107,7 +1029,7 @@ const leaveCancelled = (el) => {
        Line is at left: 28px (absolute to container).
        Relative to container content (starts at 20px), line is at 8px.
     */
-    left: -4px; 
+    left: -4px;
     top: 50%;
     transform: translateY(-50%);
     width: 8px;
@@ -1134,8 +1056,10 @@ const leaveCancelled = (el) => {
 
   &.clickable {
     cursor: pointer;
+
     &:hover {
       opacity: 0.8;
+
       &::before {
         transform: translateY(-50%) scale(1.2);
         box-shadow: 0 0 0 6px var(--sticky-dot-glow, var(--hover-bg));
@@ -1181,7 +1105,7 @@ const leaveCancelled = (el) => {
     transition: transform 0.2s;
     margin-left: 0;
     opacity: 0.8;
-    
+
     &.rotated {
       transform: rotate(90deg);
     }
@@ -1194,12 +1118,14 @@ const leaveCancelled = (el) => {
   }
 
   .group-count {
-    display: none; /* Hide count to match cleaner look, or style it minimally */
+    display: none;
+    /* Hide count to match cleaner look, or style it minimally */
   }
 }
 
 .group-list {
-  padding-left: 8px; /* Indent items to align with title text */
+  padding-left: 8px;
+  /* Indent items to align with title text */
 }
 
 .sticky-group-separator {
@@ -1215,11 +1141,12 @@ const leaveCancelled = (el) => {
   align-items: stretch;
   padding: 6px 8px;
   background: var(--sticky-card-bg, var(--bg-secondary));
-  border-radius: 8px; /* Slightly less rounded, more like card */
+  border-radius: 8px;
+  /* Slightly less rounded, more like card */
   margin-bottom: 12px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid transparent;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   user-select: none;
   position: relative;
   /* overflow: hidden; Removed to allow subtask panel to overflow */
@@ -1234,9 +1161,10 @@ const leaveCancelled = (el) => {
 
   &:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    background: var(--hover-bg); /* Highlight on hover */
-    
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    background: var(--hover-bg);
+    /* Highlight on hover */
+
     .drag-handle {
       opacity: 1;
     }
@@ -1248,7 +1176,7 @@ const leaveCancelled = (el) => {
     background: var(--bg-color);
     box-shadow: none;
     border-color: transparent;
-    
+
     &:hover {
       transform: none;
       box-shadow: none;
@@ -1258,11 +1186,11 @@ const leaveCancelled = (el) => {
       text-decoration: line-through;
       color: var(--secondary-text);
     }
-    
+
     .checkbox-custom {
       border-color: var(--secondary-text);
       background: var(--secondary-text);
-      
+
       &::after {
         opacity: 1;
       }
@@ -1302,7 +1230,8 @@ const leaveCancelled = (el) => {
   width: 15px;
   height: 15px;
   border: 1.5px solid var(--border-color);
-  border-radius: 50%; /* Circular */
+  border-radius: 50%;
+  /* Circular */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1315,9 +1244,10 @@ const leaveCancelled = (el) => {
   }
 
   &.checked {
-    background: var(--secondary-text); /* Completed color */
+    background: var(--secondary-text);
+    /* Completed color */
     border-color: transparent !important;
-    
+
     /* If priority colors needed for checked state, can adjust here. 
        But usually completed = gray/muted. 
     */
@@ -1344,7 +1274,7 @@ const leaveCancelled = (el) => {
     line-height: 1.5;
     font-weight: 500;
   }
-  
+
   /* Modern Priority Badge/Indicator */
   .priority-badge {
     padding: 2px 6px;
@@ -1352,23 +1282,28 @@ const leaveCancelled = (el) => {
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
-    
-    &.high { 
-      background: rgba(239, 68, 68, 0.1); 
+
+    &.high {
+      background: rgba(239, 68, 68, 0.1);
       color: var(--danger-color);
       border: 1px solid rgba(239, 68, 68, 0.2);
     }
-    &.medium { 
-      background: rgba(245, 158, 11, 0.1); 
+
+    &.medium {
+      background: rgba(245, 158, 11, 0.1);
       color: var(--warning-color);
       border: 1px solid rgba(245, 158, 11, 0.2);
     }
-    &.low { 
-      background: rgba(34, 197, 94, 0.1); 
+
+    &.low {
+      background: rgba(34, 197, 94, 0.1);
       color: var(--success-color);
       border: 1px solid rgba(34, 197, 94, 0.2);
     }
-    &.normal { display: none; } 
+
+    &.normal {
+      display: none;
+    }
   }
 
   .meta {
@@ -1384,9 +1319,12 @@ const leaveCancelled = (el) => {
       align-items: center;
       gap: 4px;
       padding: 2px 8px;
-      background: var(--bg-color); /* Darker/Lighter than card */
-      border: 1px solid var(--border-color); /* Subtle border */
-      border-radius: 6px; /* Match checkbox radius */
+      background: var(--bg-color);
+      /* Darker/Lighter than card */
+      border: 1px solid var(--border-color);
+      /* Subtle border */
+      border-radius: 6px;
+      /* Match checkbox radius */
       font-size: 11px;
       color: var(--secondary-text);
       transition: all 0.2s;
@@ -1396,13 +1334,13 @@ const leaveCancelled = (el) => {
         font-size: 12px;
         opacity: 0.8;
       }
-      
+
       &.overdue {
         background: rgba(239, 68, 68, 0.1);
         color: var(--danger-color);
         border-color: rgba(239, 68, 68, 0.2);
       }
-      
+
       &.has-desc {
         color: var(--primary-color);
         background: rgba(59, 130, 246, 0.1);
@@ -1410,9 +1348,9 @@ const leaveCancelled = (el) => {
       }
 
       &.completed-time {
-         border-color: transparent;
-         background: transparent;
-         padding-left: 0;
+        border-color: transparent;
+        background: transparent;
+        padding-left: 0;
       }
     }
   }
@@ -1445,7 +1383,7 @@ const leaveCancelled = (el) => {
   &:active {
     transform: scale(0.95);
   }
-  
+
   i {
     line-height: 1;
   }
@@ -1460,7 +1398,7 @@ const leaveCancelled = (el) => {
   color: var(--secondary-text);
   font-size: 14px;
   opacity: 0.8;
-  
+
   img {
     filter: grayscale(1);
     opacity: 0.5;
@@ -1502,46 +1440,47 @@ const leaveCancelled = (el) => {
   transition: background 0.2s;
   color: var(--secondary-text);
   gap: 6px;
-  
+
   &:hover {
     background: var(--active-bg);
   }
-  
+
   .subtask-circle {
     width: 10px;
     height: 10px;
     border: 1.5px solid var(--border-color);
-    border-radius: 50%; /* Circular */
+    border-radius: 50%;
+    /* Circular */
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     transition: all 0.2s;
     background: transparent;
-    
+
     &.checked {
-       background: var(--primary-color);
-       border-color: var(--primary-color);
+      background: var(--primary-color);
+      border-color: var(--primary-color);
     }
-    
+
     i {
       font-size: 10px;
       color: white;
     }
   }
-  
+
   span {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    
+
     &.done {
       text-decoration: line-through;
       opacity: 0.6;
     }
   }
-  
+
   .subtask-index {
     margin-right: 2px;
     opacity: 0.8;
@@ -1559,16 +1498,16 @@ const leaveCancelled = (el) => {
   cursor: pointer;
   transition: all 0.2s;
   font-size: 11px;
-  
+
   &:hover {
     background: var(--active-bg);
     color: var(--primary-color);
   }
-  
+
   i {
     font-size: 12px;
   }
-  
+
   .count {
     font-size: 11px;
     font-weight: 500;
@@ -1585,7 +1524,7 @@ const leaveCancelled = (el) => {
   z-index: 9999;
   min-width: 200px;
   max-width: 300px;
-  
+
   .attachment-item {
     display: flex;
     align-items: center;
@@ -1595,16 +1534,16 @@ const leaveCancelled = (el) => {
     cursor: pointer;
     color: var(--text-color);
     transition: background 0.2s;
-    
+
     &:hover {
       background: var(--active-bg);
     }
-    
+
     i {
       font-size: 18px;
       color: var(--primary-color);
     }
-    
+
     .att-name {
       font-size: 13px;
       white-space: nowrap;
@@ -1675,7 +1614,8 @@ const leaveCancelled = (el) => {
 }
 
 .encoding-select {
-  padding: 6px 24px 6px 8px; /* Extra right padding for arrow */
+  padding: 6px 24px 6px 8px;
+  /* Extra right padding for arrow */
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: var(--bg-color);
@@ -1688,7 +1628,7 @@ const leaveCancelled = (el) => {
   background-repeat: no-repeat;
   background-position: right 4px center;
   background-size: 16px;
-  
+
   &:hover {
     border-color: var(--primary-color);
   }
@@ -1706,7 +1646,7 @@ const leaveCancelled = (el) => {
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
-  
+
   &:hover {
     background: var(--hover-bg);
     border-color: var(--primary-color);
@@ -1725,7 +1665,7 @@ const leaveCancelled = (el) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  
+
   &:hover {
     background: var(--hover-bg);
     color: var(--text-color);
@@ -1747,7 +1687,7 @@ const leaveCancelled = (el) => {
   max-height: 100%;
   object-fit: contain;
   border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .preview-text {
@@ -1771,12 +1711,12 @@ const leaveCancelled = (el) => {
   align-items: center;
   gap: 12px;
   color: var(--secondary-text);
-  
+
   i {
     font-size: 48px;
     opacity: 0.5;
   }
-  
+
   p {
     font-size: 14px;
   }

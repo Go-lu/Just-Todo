@@ -1095,13 +1095,17 @@ const onOverlayClick = () => {
             <div class="form-col"></div>
           </div>
 
-          <div class="form-row date-reminder-row">
-            <div class="form-col">
-              <div class="inline-label-row">
+        </div>
+
+        <div class="section-card">
+          <div class="card-title">
+            <span>提醒</span>
+            <ToggleSwitch v-model="form.reminderEnabled" />
+          </div>
+          <div v-if="form.reminderEnabled">
+            <div class="form-row date-reminder-row">
+              <div class="form-col">
                 <label>提醒时间</label>
-                <ToggleSwitch v-model="form.reminderEnabled" />
-              </div>
-              <div v-if="form.reminderEnabled">
                 <div
                   v-if="form.repeatRule === 'none'"
                   class="select-field date-picker-wrapper"
@@ -1123,36 +1127,36 @@ const onOverlayClick = () => {
                   <i class="ri-arrow-down-s-line field-arrow"></i>
                 </div>
               </div>
-            </div>
-            <div class="form-col" v-if="form.reminderEnabled">
-              <div class="meta-label-row">
-                <label>通知渠道<span class="required-mark">*</span></label>
-                <button class="text-link-btn" type="button" @click.stop="openNotifySettings">设置通知渠道</button>
-                <span v-if="!hasNotifyChannels" class="meta-follow-hint">未选择</span>
-              </div>
-              <div
-                class="select-field notify-select"
-                :class="{ open: activeDropdown === 'notifyChannels' }"
-                @click.stop="toggleDropdown('notifyChannels')"
-              >
-                <span class="field-text">{{ notifyChannelsText }}</span>
-                <i v-if="hasNotifyChannels" class="ri-close-circle-fill clear-btn" @click.stop="clearNotifyChannels"></i>
-                <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'notifyChannels' }"></i>
-                <transition name="slide-pull">
-                  <div class="dropdown-panel" v-show="activeDropdown === 'notifyChannels'" @click.stop>
-                    <div v-if="notifyChannelOptions.length === 0" class="dropdown-empty">暂无可用渠道</div>
-                    <div
-                      v-for="opt in notifyChannelOptions"
-                      :key="opt.value"
-                      class="dropdown-item notify-item"
-                      :class="{ selected: Array.isArray(form.notifyChannels) && form.notifyChannels.includes(opt.value) }"
-                      @click.stop="toggleNotifyChannel(opt.value)"
-                    >
-                      <i class="ri-check-line check-icon"></i>
-                      <span>{{ opt.label }}</span>
+              <div class="form-col">
+                <div class="meta-label-row">
+                  <label>通知渠道<span class="required-mark">*</span></label>
+                  <button class="text-link-btn" type="button" @click.stop="openNotifySettings">设置通知渠道</button>
+                  <span v-if="!hasNotifyChannels" class="meta-follow-hint">未选择</span>
+                </div>
+                <div
+                  class="select-field notify-select"
+                  :class="{ open: activeDropdown === 'notifyChannels' }"
+                  @click.stop="toggleDropdown('notifyChannels')"
+                >
+                  <span class="field-text">{{ notifyChannelsText }}</span>
+                  <i v-if="hasNotifyChannels" class="ri-close-circle-fill clear-btn" @click.stop="clearNotifyChannels"></i>
+                  <i class="ri-arrow-down-s-line field-arrow" :class="{ open: activeDropdown === 'notifyChannels' }"></i>
+                  <transition name="slide-pull">
+                    <div class="dropdown-panel" v-show="activeDropdown === 'notifyChannels'" @click.stop>
+                      <div v-if="notifyChannelOptions.length === 0" class="dropdown-empty">暂无可用渠道</div>
+                      <div
+                        v-for="opt in notifyChannelOptions"
+                        :key="opt.value"
+                        class="dropdown-item notify-item"
+                        :class="{ selected: Array.isArray(form.notifyChannels) && form.notifyChannels.includes(opt.value) }"
+                        @click.stop="toggleNotifyChannel(opt.value)"
+                      >
+                        <i class="ri-check-line check-icon"></i>
+                        <span>{{ opt.label }}</span>
+                      </div>
                     </div>
-                  </div>
-                </transition>
+                  </transition>
+                </div>
               </div>
             </div>
           </div>
