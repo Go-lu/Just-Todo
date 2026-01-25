@@ -40,11 +40,6 @@
                 </label>
               </div>
               <div class="form-group">
-                <label>提前提醒时间 (分钟)</label>
-                <input type="number" v-model.number="form.desktop.advanceMinutes" min="0" placeholder="0 表示准时提醒">
-                <small>设置在任务截止时间前多少分钟进行提醒</small>
-              </div>
-              <div class="form-group">
                 <button class="test-btn" @click="testDesktop" :disabled="!form.desktop.enabled">
                   <i class="ri-flask-line"></i> 测试桌面通知
                 </button>
@@ -311,7 +306,7 @@ const emit = defineEmits(['update:visible', 'save', 'save-backup', 'data-restore
 const currentTab = ref('notification');
 
 const defaultSettings = {
-  desktop: { enabled: true, advanceMinutes: 0 },
+  desktop: { enabled: true },
   email: { enabled: false, alias: '', host: 'smtp.qq.com', port: 465, secure: true, user: '', pass: '', to: '' },
   bark: { enabled: false, serverUrl: '', level: 'active', sound: 'minuet', badge: 1 },
   webhook: { enabled: false, url: '', method: 'POST', contentType: 'application/json', headers: [], customBody: '' }

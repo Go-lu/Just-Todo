@@ -626,7 +626,6 @@ const addTodo = (todoData) => {
     dueDate: todoData.dueDate || null,
     reminderEnabled: todoData.reminderEnabled !== false,
     remindAt: todoData.remindAt || null,
-    reminderAdvanceMinutes: typeof todoData.reminderAdvanceMinutes === 'number' ? todoData.reminderAdvanceMinutes : null,
     notifyChannels: Array.isArray(todoData.notifyChannels) ? [...new Set(todoData.notifyChannels.filter(Boolean))] : [],
     repeatRule: todoData.repeatRule !== 'none' ? todoData.repeatRule : null,
     repeatWeekDays: Array.isArray(todoData.repeatWeekDays) ? [...todoData.repeatWeekDays] : [],
@@ -720,6 +719,7 @@ const updateTodo = (updatedTodo) => {
       ...updatedTodo,
       attachments: updatedTodo.attachments !== undefined ? updatedTodo.attachments : (oldTodo.attachments || [])
     };
+    if ('reminderAdvanceMinutes' in merged) delete merged.reminderAdvanceMinutes;
     merged.repeatRule = normalizeRepeatRule(merged.repeatRule);
 
     const oldKey = [
@@ -730,7 +730,6 @@ const updateTodo = (updatedTodo) => {
       (oldTodo.dueDate || '').toString(),
       String(oldTodo.reminderEnabled !== false ? 1 : 0),
       (oldTodo.remindAt || '').toString(),
-      String(typeof oldTodo.reminderAdvanceMinutes === 'number' ? oldTodo.reminderAdvanceMinutes : ''),
       normalizeNotifyChannels(oldTodo.notifyChannels),
       (normalizeRepeatRule(oldTodo.repeatRule) || '').toString(),
       normalizeNumberList(oldTodo.repeatWeekDays),
@@ -747,7 +746,6 @@ const updateTodo = (updatedTodo) => {
       (merged.dueDate || '').toString(),
       String(merged.reminderEnabled !== false ? 1 : 0),
       (merged.remindAt || '').toString(),
-      String(typeof merged.reminderAdvanceMinutes === 'number' ? merged.reminderAdvanceMinutes : ''),
       normalizeNotifyChannels(merged.notifyChannels),
       (merged.repeatRule || '').toString(),
       normalizeNumberList(merged.repeatWeekDays),
@@ -775,8 +773,8 @@ const updateTodo = (updatedTodo) => {
 
     const shouldRecur = completionTransition && !!merged.repeatRule;
 
-    const oldTriggerKey = `${oldTodo.reminderEnabled !== false ? 1 : 0}|${oldTodo.remindAt || ''}|${oldTodo.dueDate || ''}|${typeof oldTodo.reminderAdvanceMinutes === 'number' ? oldTodo.reminderAdvanceMinutes : ''}`;
-    const newTriggerKey = `${merged.reminderEnabled !== false ? 1 : 0}|${merged.remindAt || ''}|${merged.dueDate || ''}|${typeof merged.reminderAdvanceMinutes === 'number' ? merged.reminderAdvanceMinutes : ''}`;
+    const oldTriggerKey = `${oldTodo.reminderEnabled !== false ? 1 : 0}|${oldTodo.remindAt || ''}|${oldTodo.dueDate || ''}`;
+    const newTriggerKey = `${merged.reminderEnabled !== false ? 1 : 0}|${merged.remindAt || ''}|${merged.dueDate || ''}`;
     if (oldTriggerKey !== newTriggerKey) {
       try { notifiedTasks.value.delete(merged.id); } catch (e) {}
     }
@@ -983,19 +981,7 @@ const checkNotifications = () => {
     const dueTime = parseTriggerBaseTime(baseTimeStr);
     if (!dueTime || !dueTime.isValid()) return;
     
-    // Advance time
-    let advance = 0;
-    if (typeof todo.reminderAdvanceMinutes === 'number') {
-      advance = todo.reminderAdvanceMinutes;
-    } else if (!todo.remindAt) {
-      if (settings.general && typeof settings.general.advanceMinutes === 'number') {
-        advance = settings.general.advanceMinutes;
-      } else if (settings.desktop && settings.desktop.advanceMinutes) {
-        advance = settings.desktop.advanceMinutes;
-      }
-    }
-    
-    const triggerTime = dueTime.subtract(advance, 'minute');
+    const triggerTime = dueTime;
     if (!triggerTime || !triggerTime.isValid()) return;
     const triggerAtMs = triggerTime.valueOf();
     const cachedTriggerAt = Number(cache?.[todo.id]?.triggerAt);

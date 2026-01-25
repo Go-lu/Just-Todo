@@ -253,12 +253,6 @@ const formatRepeatRule = (todo) => {
   }
 };
 
-const hasUpdateHistory = (todo) => {
-  const history = todo?.history;
-  if (!Array.isArray(history) || history.length === 0) return false;
-  return history.some(e => e && e.type === 'update');
-};
-
 const getSubtaskProgress = (todo) => {
   if (!todo.subtasks || todo.subtasks.length === 0) return null;
   const completed = todo.subtasks.filter(s => s.isCompleted).length;
@@ -291,6 +285,16 @@ const getCategoryName = (id) => {
       // Date only
       return dayjs(dueDate).format('MM-DD');
     };
+
+const formatRemindAt = (remindAt) => {
+  if (!remindAt) return '';
+  const raw = remindAt.toString().trim();
+  if (/^\d{2}:\d{2}$/.test(raw)) return raw;
+  const d = dayjs(raw);
+  if (!d.isValid()) return raw;
+  if (raw.length > 10) return d.format('MM-DD HH:mm');
+  return d.format('MM-DD');
+};
     
     // Grouping Logic
 const displayGroups = computed(() => {
@@ -610,16 +614,23 @@ const onContextMenu = (e, todo) => {
 
 // Subtask Hover Logic
 const hoveredKey = ref(null);
+const hoverActiveKey = ref(null);
 let hoverTimeout = null;
 
 const showSubtasks = (groupId, id) => {
   if (hoverTimeout) clearTimeout(hoverTimeout);
-  hoveredKey.value = `${groupId}:${id}`;
+  const key = `${groupId}:${id}`;
+  hoverActiveKey.value = key;
+  hoveredKey.value = key;
 };
 
 const hideSubtasks = () => {
+  const key = hoveredKey.value;
   hoverTimeout = setTimeout(() => {
-    hoveredKey.value = null;
+    if (hoverActiveKey.value === key) {
+      hoverActiveKey.value = null;
+      hoveredKey.value = null;
+    }
   }, 200);
 };
 
@@ -633,7 +644,13 @@ const toggleSubtaskComplete = (todo, index) => {
   emit('update-todo', newTodo);
 };
 
-// Expand Animation Hooks
+const forceExpandSubtasks = (el) => {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.opacity = '1';
+  el.style.transition = '';
+};
+
 const beforeEnter = (el) => {
   el.style.height = '0';
   el.style.opacity = '0';
@@ -641,7 +658,6 @@ const beforeEnter = (el) => {
 
 const enter = (el) => {
   el.style.transition = 'height 0.2s ease-in-out, opacity 0.2s ease-in-out';
-  // Force reflow
   el.offsetHeight;
   el.style.height = el.scrollHeight + 'px';
   el.style.opacity = '1';
@@ -656,11 +672,25 @@ const leave = (el) => {
   el.style.transition = 'height 0.2s ease-in-out, opacity 0.2s ease-in-out';
   el.style.height = el.scrollHeight + 'px';
   el.style.opacity = '1';
-  // Force reflow
   el.offsetHeight;
   el.style.height = '0';
   el.style.opacity = '0';
 };
+
+const enterCancelled = (el) => {
+  const key = el?.dataset?.subtaskKey || '';
+  if (hoverActiveKey.value === key) {
+    forceExpandSubtasks(el);
+  }
+};
+
+const leaveCancelled = (el) => {
+  const key = el?.dataset?.subtaskKey || '';
+  if (hoverActiveKey.value === key) {
+    forceExpandSubtasks(el);
+  }
+};
+
 </script>
 
 <template>
@@ -753,7 +783,7 @@ const leave = (el) => {
                           {{ element.priority === 'high' ? '高' : element.priority === 'medium' ? '中' : '低' }}
                         </span>
                       </div>
-                      <div class="meta" v-if="element.dueDate || element.repeatRule || element.description || hasUpdateHistory(element) || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
+                      <div class="meta" v-if="element.dueDate || (element.reminderEnabled !== false && element.remindAt) || element.repeatRule || element.description || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
                          <span v-if="element.description" class="meta-tag has-desc" title="有备注">
                            <i class="ri-sticky-note-line"></i>
                          </span>
@@ -769,8 +799,8 @@ const leave = (el) => {
                          <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
                            <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
                          </span>
-                         <span v-if="hasUpdateHistory(element)" class="meta-tag">
-                           <i class="ri-edit-line"></i> 已修改
+                         <span v-if="element.reminderEnabled !== false && element.remindAt" class="meta-tag">
+                           <i class="ri-alarm-line"></i> {{ formatRemindAt(element.remindAt) }}
                          </span>
                          <span v-if="element.repeatRule" class="meta-tag">
                            <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
@@ -792,11 +822,14 @@ const leave = (el) => {
                     @before-enter="beforeEnter"
                     @enter="enter"
                     @after-enter="afterEnter"
+                    @enter-cancelled="enterCancelled"
                     @leave="leave"
+                    @leave-cancelled="leaveCancelled"
                   >
                     <div 
                       v-if="hoveredKey === `${group.id}:${element.id}` && element.subtasks && element.subtasks.length > 0"
                       class="subtask-expansion-wrapper"
+                      :data-subtask-key="`${group.id}:${element.id}`"
                       @click.stop
                     >
                       <div class="subtask-inner-panel">
@@ -826,7 +859,6 @@ const leave = (el) => {
 
            <!-- Non-draggable List -->
            <div v-else>
-             <TransitionGroup name="list" tag="div">
              <div 
                 v-for="element in group.items" 
                 :key="element.id" 
@@ -857,7 +889,7 @@ const leave = (el) => {
                        {{ element.priority === 'high' ? '高' : element.priority === 'medium' ? '中' : '低' }}
                      </span>
                    </div>
-                   <div class="meta" v-if="element.dueDate || element.repeatRule || element.description || hasUpdateHistory(element) || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
+                  <div class="meta" v-if="element.dueDate || (element.reminderEnabled !== false && element.remindAt) || element.repeatRule || element.description || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
                          <span v-if="element.description" class="meta-tag has-desc" title="有备注">
                            <i class="ri-sticky-note-line"></i>
                          </span>
@@ -872,8 +904,8 @@ const leave = (el) => {
                      <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
                        <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
                      </span>
-                     <span v-if="hasUpdateHistory(element)" class="meta-tag">
-                       <i class="ri-edit-line"></i> 已修改
+                     <span v-if="element.reminderEnabled !== false && element.remindAt" class="meta-tag">
+                       <i class="ri-alarm-line"></i> {{ formatRemindAt(element.remindAt) }}
                      </span>
                      <span v-if="element.repeatRule && !element.isCompleted" class="meta-tag">
                        <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
@@ -895,15 +927,18 @@ const leave = (el) => {
                  </div>
                </div>
 
-             <Transition
+              <Transition
                 @before-enter="beforeEnter"
                 @enter="enter"
                 @after-enter="afterEnter"
+                @enter-cancelled="enterCancelled"
                 @leave="leave"
+                @leave-cancelled="leaveCancelled"
               >
-              <div 
+                <div 
                   v-if="hoveredKey === `${group.id}:${element.id}` && element.subtasks && element.subtasks.length > 0"
                   class="subtask-expansion-wrapper"
+                  :data-subtask-key="`${group.id}:${element.id}`"
                   @click.stop
                 >
                   <div class="subtask-inner-panel">
@@ -928,7 +963,6 @@ const leave = (el) => {
                 </div>
               </Transition>
              </div>
-             </TransitionGroup>
            </div>
         </div>
         <div v-if="props.stickyMode && props.categoryId === 'all' && group.id === 'sticky-urgent'" class="sticky-group-separator"></div>
@@ -1432,29 +1466,6 @@ const leave = (el) => {
     opacity: 0.5;
     margin-bottom: 16px;
   }
-}
-
-/* List Transitions */
-.list-move,
-.list-enter-active,
-.list-leave-active {
-  transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
-}
-
-.list-enter-from,
-.list-leave-to {
-  opacity: 0;
-  transform: scale(0.9);
-  max-height: 0;
-  margin-bottom: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-width: 0;
-}
-
-.list-leave-active {
-  /* Ensure smooth removal */
-  max-height: 100px; /* Needs to be larger than actual height */
 }
 
 /* Subtask Hover Panel Styles */

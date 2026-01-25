@@ -48,7 +48,6 @@ const form = ref({
   dueDate: '',
   reminderEnabled: false,
   remindAt: '',
-  reminderAdvanceMinutes: null,
   notifyChannels: [],
   repeatRule: 'none',
   repeatWeekDays: [],
@@ -366,7 +365,6 @@ watch(() => props.visible, (val) => {
         repeatRule: props.initialData.repeatRule || 'none',
         reminderEnabled: props.initialData.reminderEnabled !== false,
         remindAt: props.initialData.remindAt || '',
-        reminderAdvanceMinutes: typeof props.initialData.reminderAdvanceMinutes === 'number' ? props.initialData.reminderAdvanceMinutes : null,
         notifyChannels: Array.isArray(props.initialData.notifyChannels) ? [...props.initialData.notifyChannels] : [],
         repeatWeekDays: Array.isArray(props.initialData.repeatWeekDays) ? [...props.initialData.repeatWeekDays] : [],
         repeatMonthDays: Array.isArray(props.initialData.repeatMonthDays) ? [...props.initialData.repeatMonthDays] : [],
@@ -385,7 +383,6 @@ watch(() => props.visible, (val) => {
         dueDate: seed.dueDate || (props.defaultCategoryId === 'today' ? dayjs().format('YYYY-MM-DD') : ''),
         reminderEnabled: typeof seed.reminderEnabled === 'boolean' ? seed.reminderEnabled : false,
         remindAt: seed.remindAt || '',
-        reminderAdvanceMinutes: typeof seed.reminderAdvanceMinutes === 'number' ? seed.reminderAdvanceMinutes : null,
         notifyChannels: Array.isArray(seed.notifyChannels) ? [...seed.notifyChannels] : [],
         repeatRule: seed.repeatRule || 'none',
         repeatWeekDays: Array.isArray(seed.repeatWeekDays) ? [...seed.repeatWeekDays] : [],
@@ -522,28 +519,11 @@ const handleRemindAtConfirm = (val) => {
   showReminderPicker.value = false;
 };
 
-const getDefaultReminderText = () => {
-  const s = form.value.dueDate || '';
-  if (!s) return '未设置截止日期';
-  if (typeof s === 'string' && s.length === 10) return `${s} 09:00`;
-  return s;
-};
-
 const getRemindAtPlaceholder = () => {
   const s = form.value.dueDate || '';
   if (!s) return '先设置截止日期';
   if (typeof s === 'string' && s.length === 10) return '留空则按 09:00 提醒';
   return '留空则按截止时间提醒';
-};
-
-const setReminderAdvanceMinutes = (val) => {
-  const raw = typeof val === 'string' ? val.trim() : '';
-  if (!raw) {
-    form.value.reminderAdvanceMinutes = null;
-    return;
-  }
-  const n = Number(raw);
-  form.value.reminderAdvanceMinutes = Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
 };
 
 // Weekly: 0-6 (Sun-Sat)
@@ -835,7 +815,6 @@ const isFormChanged = () => {
     (props.initialData.dueDate || '').toString(),
     String(props.initialData.reminderEnabled !== false ? 1 : 0),
     (props.initialData.remindAt || '').toString(),
-    String(typeof props.initialData.reminderAdvanceMinutes === 'number' ? props.initialData.reminderAdvanceMinutes : ''),
     normalizeNotifyChannels(props.initialData.notifyChannels),
     normalizeRepeatRule(props.initialData.repeatRule),
     normalizeNumberList(props.initialData.repeatWeekDays),
@@ -851,7 +830,6 @@ const isFormChanged = () => {
     (form.value.dueDate || '').toString(),
     String(form.value.reminderEnabled !== false ? 1 : 0),
     (form.value.remindAt || '').toString(),
-    String(typeof form.value.reminderAdvanceMinutes === 'number' ? form.value.reminderAdvanceMinutes : ''),
     normalizeNotifyChannels(form.value.notifyChannels),
     normalizeRepeatRule(form.value.repeatRule),
     normalizeNumberList(form.value.repeatWeekDays),
@@ -1146,22 +1124,7 @@ const onOverlayClick = () => {
                 </div>
               </div>
             </div>
-
             <div class="form-col" v-if="form.reminderEnabled">
-              <label>提前提醒 (分钟)</label>
-              <input
-                type="number"
-                min="0"
-                :value="form.reminderAdvanceMinutes ?? ''"
-                placeholder="留空使用设置"
-                @input="setReminderAdvanceMinutes($event.target.value)"
-              >
-              <div v-if="form.reminderEnabled" class="hint-text reminder-default-hint">默认提醒时间：{{ getDefaultReminderText() }}</div>
-            </div>
-          </div>
-
-          <div class="form-row reminder-meta-row" v-if="form.reminderEnabled">
-            <div class="form-col full-width">
               <div class="meta-label-row">
                 <label>通知渠道<span class="required-mark">*</span></label>
                 <button class="text-link-btn" type="button" @click.stop="openNotifySettings">设置通知渠道</button>
@@ -1714,14 +1677,6 @@ const onOverlayClick = () => {
   align-items: flex-start;
 }
 
-.reminder-meta-row {
-  margin-top: -6px;
-}
-
-.reminder-meta-row + .reminder-meta-row {
-  margin-top: 0;
-}
-
 .reminder-meta-grid {
   margin-top: 10px;
   display: grid;
@@ -1735,10 +1690,6 @@ const onOverlayClick = () => {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
-}
-
-.reminder-default-hint {
-  margin-top: 8px;
 }
 
 .date-picker-wrapper input[type="time"] {

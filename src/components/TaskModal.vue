@@ -188,7 +188,6 @@ const form = ref({
   dueDate: '',
   reminderEnabled: false,
   remindAt: '',
-  reminderAdvanceMinutes: null,
   notifyChannels: [],
   repeatRule: 'none',
   repeatWeekDays: [],
@@ -493,7 +492,6 @@ watch(() => props.visible, (val) => {
         repeatRule: props.initialData.repeatRule || 'none',
         reminderEnabled: props.initialData.reminderEnabled !== false,
         remindAt: props.initialData.remindAt || '',
-        reminderAdvanceMinutes: typeof props.initialData.reminderAdvanceMinutes === 'number' ? props.initialData.reminderAdvanceMinutes : null,
         notifyChannels: Array.isArray(props.initialData.notifyChannels) ? [...props.initialData.notifyChannels] : [],
         repeatWeekDays: Array.isArray(props.initialData.repeatWeekDays) ? [...props.initialData.repeatWeekDays] : [],
         repeatMonthDays: Array.isArray(props.initialData.repeatMonthDays) ? [...props.initialData.repeatMonthDays] : [],
@@ -511,7 +509,6 @@ watch(() => props.visible, (val) => {
         dueDate: seed.dueDate || (props.defaultCategoryId === 'today' ? dayjs().format('YYYY-MM-DD') : ''),
         reminderEnabled: typeof seed.reminderEnabled === 'boolean' ? seed.reminderEnabled : false,
         remindAt: seed.remindAt || '',
-        reminderAdvanceMinutes: typeof seed.reminderAdvanceMinutes === 'number' ? seed.reminderAdvanceMinutes : null,
         notifyChannels: Array.isArray(seed.notifyChannels) ? [...seed.notifyChannels] : [],
         repeatRule: seed.repeatRule || 'none',
         repeatWeekDays: Array.isArray(seed.repeatWeekDays) ? [...seed.repeatWeekDays] : [],
@@ -536,28 +533,11 @@ const handleRemindAtConfirm = (val) => {
   activeDropdown.value = null;
 };
 
-const getDefaultReminderText = () => {
-  const s = form.value.dueDate || '';
-  if (!s) return '未设置截止日期';
-  if (typeof s === 'string' && s.length === 10) return `${s} 09:00`;
-  return s;
-};
-
 const getRemindAtPlaceholder = () => {
   const s = form.value.dueDate || '';
   if (!s) return '先设置截止日期';
   if (typeof s === 'string' && s.length === 10) return '留空则按 09:00 提醒';
   return '留空则按截止时间提醒';
-};
-
-const setReminderAdvanceMinutes = (val) => {
-  const raw = typeof val === 'string' ? val.trim() : '';
-  if (!raw) {
-    form.value.reminderAdvanceMinutes = null;
-    return;
-  }
-  const n = Number(raw);
-  form.value.reminderAdvanceMinutes = Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
 };
 
 // Weekly: 0-6 (Sun-Sat)
@@ -628,6 +608,7 @@ const reminderTimeMissing = computed(() => {
   return !(dueDateStr && dueTime);
 });
 
+const contentError = computed(() => saveAttempted.value && !form.value.content.trim());
 const remindAtError = computed(() => saveAttempted.value && reminderTimeMissing.value);
 const notifyChannelsError = computed(() => saveAttempted.value && form.value.reminderEnabled && !hasNotifyChannels.value);
 
@@ -818,8 +799,8 @@ const setCurrentDueTime = () => {
 };
 
 const onSave = () => {
-  if (!form.value.content.trim()) return;
   saveAttempted.value = true;
+  if (!form.value.content.trim()) return;
   if (form.value.reminderEnabled) {
     applyReminderFromDueDate();
     if (reminderTimeMissing.value) return;
@@ -851,11 +832,11 @@ const onClose = () => {
 
 <template>
   <div v-if="visible" class="modal-overlay" @click.self="onClose">
-    <div class="modal-box task-modal">
+    <div class="modal-box task-modal" @click="closeDropdowns">
       <h3>{{ initialData && initialData.id ? '编辑任务' : '新建任务' }}</h3>
       
       <div class="section-card task-main-card">
-        <div class="task-content-label">
+        <div class="task-content-label" :class="{ error: contentError }">
           <span>任务内容</span><span class="required-mark">*</span>
         </div>
         <div class="task-header-row">
@@ -863,6 +844,7 @@ const onClose = () => {
             ref="contentInput"
             v-model="form.content" 
             class="task-input-clean"
+            :class="{ 'input-error': contentError }"
             placeholder="准备做什么？" 
             rows="1"
             v-auto-resize
@@ -1041,6 +1023,7 @@ const onClose = () => {
             >
               <i class="ri-time-line icon-prefix"></i>
               <input ref="repeatDueTimeInputRef" type="time" v-model="repeatDueTime" @click.stop>
+              <i v-if="repeatDueTime" class="ri-close-circle-fill clear-btn" @click.stop="repeatDueTime = ''"></i>
               <i class="ri-arrow-down-s-line field-arrow"></i>
             </div>
           </div>
@@ -1137,22 +1120,7 @@ const onClose = () => {
                 <i class="ri-arrow-down-s-line field-arrow"></i>
               </div>
             </div>
-
             <div class="form-col">
-              <label>提前提醒 (分钟)</label>
-              <input
-                type="number"
-                min="0"
-                :value="form.reminderAdvanceMinutes ?? ''"
-                placeholder="留空使用设置"
-                @input="setReminderAdvanceMinutes($event.target.value)"
-              >
-              <div class="hint-text reminder-default-hint">默认提醒时间：{{ getDefaultReminderText() }}</div>
-            </div>
-          </div>
-
-          <div class="form-row reminder-meta-row">
-            <div class="form-col full-width">
               <div class="meta-label-row">
                 <label>通知渠道<span class="required-mark">*</span></label>
                 <button class="text-link-btn" type="button" @click.stop="openNotifySettings">设置通知渠道</button>
@@ -1440,10 +1408,6 @@ h3 {
   align-items: flex-start;
 }
 
-.reminder-meta-row {
-  margin-top: -6px;
-}
-
 .inline-label-row {
   display: flex;
   align-items: center;
@@ -1459,10 +1423,6 @@ h3 {
 
 .notify-dropdown-panel {
   top: calc(100% + 2px);
-}
-
-.reminder-default-hint {
-  margin-top: 8px;
 }
 
 .select-field.disabled {
@@ -1901,6 +1861,9 @@ textarea {
     background: transparent;
   }
 }
+.task-input-clean.input-error {
+  border-bottom-color: var(--danger-color);
+}
 
 .dashed-divider {
   height: 1px;
@@ -2210,6 +2173,9 @@ textarea {
   align-items: center;
   gap: 2px;
   margin-bottom: 6px;
+}
+.task-content-label.error {
+  color: var(--danger-color);
 }
 
 .required-mark {
