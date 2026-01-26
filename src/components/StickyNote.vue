@@ -303,24 +303,45 @@ const setThemeMode = (mode) => {
 
 const setNoteColor = (color) => {
   noteColor.value = color;
+  customColor.value = color;
 };
 
 const toggleColorFollowSystem = () => {
   colorFollowSystem.value = !colorFollowSystem.value;
 };
 
-const handleCustomColorChange = (e) => {
-  const value = e.target.value;
-  if (typeof value === 'string' && value) {
-    customColor.value = value;
-    noteColor.value = value;
+const persistCustomColors = () => {
+  try {
+    localStorage.setItem('justtodo_custom_colors', JSON.stringify(customColors.value));
+  } catch (e) {}
+};
 
-    if (!presetColors.includes(value) && !customColors.value.includes(value)) {
-      customColors.value.push(value);
-      try {
-        localStorage.setItem('justtodo_custom_colors', JSON.stringify(customColors.value));
-      } catch (e) {}
-    }
+const ensureCustomColor = (value) => {
+  if (!value || typeof value !== 'string') return;
+  if (presetColors.includes(value)) return;
+  if (customColors.value.includes(value)) return;
+  customColors.value.push(value);
+  persistCustomColors();
+};
+
+const handleCustomColorChange = (e) => {
+  const value = e?.target?.value;
+  if (typeof value !== 'string' || !value) return;
+  customColor.value = value;
+  noteColor.value = value;
+  ensureCustomColor(value);
+};
+
+const removeCustomColor = (color) => {
+  const idx = customColors.value.indexOf(color);
+  if (idx === -1) return;
+  customColors.value.splice(idx, 1);
+  persistCustomColors();
+
+  if (noteColor.value === color) {
+    const fallback = effectiveTheme.value === 'dark' ? presetColors[1] : presetColors[0];
+    noteColor.value = fallback;
+    customColor.value = fallback;
   }
 };
 
@@ -668,27 +689,34 @@ onMounted(() => {
             <div class="color-section">
               <div class="color-section-header">自定义</div>
               <div class="color-section-body">
-                <button
-                  v-for="color in customColors"
-                  :key="color"
-                  type="button"
-                  class="color-swatch"
-                  :class="{ active: noteColor === color && !colorFollowSystem }"
-                  :style="{ backgroundColor: color }"
-                  @click="!colorFollowSystem && setNoteColor(color)"
-                ></button>
-                <label
-                  class="color-swatch custom-swatch"
-                  title="添加自定义颜色"
-                >
-                  <span class="custom-plus">+</span>
-                  <input
-                    class="color-input"
-                    type="color"
-                    :value="customColor"
-                    @change="!colorFollowSystem && handleCustomColorChange($event)"
+                <div v-for="color in customColors" :key="color" class="custom-color-item">
+                  <button
+                    type="button"
+                    class="color-swatch"
+                    :class="{ active: noteColor === color && !colorFollowSystem }"
+                    :style="{ backgroundColor: color }"
+                    @click="!colorFollowSystem && setNoteColor(color)"
+                  ></button>
+                  <button
+                    type="button"
+                    class="delete-custom-color"
+                    title="删除"
+                    @click.stop="!colorFollowSystem && removeCustomColor(color)"
                   >
-                </label>
+                    <i class="ri-close-line"></i>
+                  </button>
+                </div>
+                <div class="custom-color-actions">
+                  <label class="color-swatch custom-swatch" title="添加自定义颜色">
+                    <span class="custom-plus">+</span>
+                    <input
+                      class="color-input"
+                      type="color"
+                      :value="customColor"
+                      @change="!colorFollowSystem && handleCustomColorChange($event)"
+                    >
+                  </label>
+                </div>
               </div>
             </div>
           </div>
@@ -1011,6 +1039,55 @@ onMounted(() => {
     opacity: 0;
     cursor: pointer;
   }
+
+  .custom-color-item {
+    position: relative;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+  }
+
+  .custom-color-item .color-swatch {
+    width: 18px;
+    height: 18px;
+  }
+
+  .delete-custom-color {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.9);
+    cursor: pointer;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
+  .custom-color-item:hover .delete-custom-color {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .delete-custom-color i {
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .custom-color-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
 }
 
 .sticky-note.theme-dark .menu-popup {
@@ -1042,6 +1119,11 @@ onMounted(() => {
 
 .sticky-note.theme-dark .menu-popup .color-swatch {
   border-color: rgba(255,255,255,0.2);
+}
+
+.sticky-note.theme-dark .menu-popup .delete-custom-color {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
 }
 
 .toggle-switch {
