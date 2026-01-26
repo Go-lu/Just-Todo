@@ -22,6 +22,11 @@ const emit = defineEmits([
   'close'
 ]);
 
+const visibleTodos = computed(() => {
+  const list = Array.isArray(props.todos) ? props.todos : [];
+  return list.filter(t => t && !t.isCompleted);
+});
+
 const getPinParam = () => {
   const searchParams = new URLSearchParams(window.location.search || '');
   const direct = searchParams.get('pin');
@@ -503,6 +508,54 @@ const updateOpacity = (e) => {
   opacity.value = val;
 };
 
+const openMainPage = () => {
+  menuVisible.value = false;
+
+  try {
+    if (window.utools && typeof window.utools.showMainWindow === 'function') {
+      window.utools.showMainWindow();
+    }
+  } catch (e) {}
+
+  try {
+    if (window.utools && typeof window.utools.createBrowserWindow === 'function') {
+      const options = {
+        width: 980,
+        height: 720,
+        title: 'Just Todo',
+        useContentSize: true,
+        frame: true,
+        transparent: false,
+        resizable: true,
+        minimizable: true,
+        maximizable: true,
+        alwaysOnTop: false,
+        skipTaskbar: false,
+        show: false,
+        webPreferences: {
+          preload: 'preload/services.js',
+          nodeIntegration: true,
+          contextIsolation: false,
+          enableRemoteModule: true,
+          backgroundThrottling: false
+        }
+      };
+
+      const url = `index.html?nonce=${Date.now().toString(36)}`;
+      let win = null;
+      win = window.utools.createBrowserWindow(url, options, () => {
+        try { if (win && typeof win.show === 'function') win.show(); } catch (e) {}
+        try { if (win && typeof win.focus === 'function') win.focus(); } catch (e) {}
+      });
+      return;
+    }
+  } catch (e) {}
+
+  try {
+    window.open('index.html', '_blank');
+  } catch (e) {}
+};
+
 const closeMenu = (e) => {
     if (!e.target.closest('.menu-container') && !e.target.closest('.menu-btn')) {
         menuVisible.value = false;
@@ -522,6 +575,9 @@ onMounted(() => {
         <i class="ri-sticky-note-line"></i> 待办便签
       </div>
       <div class="window-controls">
+        <button class="icon-btn open-main-btn" @click.stop="openMainPage" title="打开主页面">
+          <i class="ri-home-4-line"></i>
+        </button>
         <button class="icon-btn menu-btn" @click.stop="toggleMenu" title="设置">
           <i class="ri-more-fill"></i>
         </button>
@@ -642,7 +698,7 @@ onMounted(() => {
     
     <div class="sticky-body">
        <TodoList 
-         :todos="todos" 
+         :todos="visibleTodos" 
          :categories="categories"
          categoryId="all"
          :stickyMode="true"

@@ -484,6 +484,13 @@ const displayGroups = computed(() => {
 });
 
 const isCustomSort = computed(() => props.sortState.field !== 'default');
+const containerStyle = computed(() => {
+  if (!props.stickyMode) return {};
+  return {
+    '--group-gap': '16px',
+    '--group-header-gap': '8px'
+  };
+});
 watch(displayGroups, () => updateAxisBounds());
 watch(() => props.todos.length, () => updateAxisBounds());
 watch(displayGroups, () => updateScrollState());
@@ -509,8 +516,9 @@ const checkAndInitUrgent = () => {
 const checkAndInitSticky = () => {
   if (props.stickyMode && props.categoryId === 'all' && !stickyInitialized.value && displayGroups.value.length > 0) {
     const groups = displayGroups.value;
+    const expandId = groups[0]?.id;
     groups.forEach(g => {
-      collapsedGroups.value[g.id] = g.id !== 'sticky-today';
+      collapsedGroups.value[g.id] = g.id !== expandId;
     });
     stickyInitialized.value = true;
     updateAxisBounds();
@@ -615,22 +623,37 @@ const onContextMenu = (e, todo) => {
 
 // Subtask Hover Logic
 const hoveredKey = ref(null);
+const hoveredType = ref(null);
 const hoverActiveKey = ref(null);
+const hoverActiveType = ref(null);
 let hoverTimeout = null;
 
-const showSubtasks = (groupId, id) => {
+const showHoverPanel = (type, groupId, id) => {
   if (hoverTimeout) clearTimeout(hoverTimeout);
   const key = `${groupId}:${id}`;
   hoverActiveKey.value = key;
+  hoverActiveType.value = type;
   hoveredKey.value = key;
+  hoveredType.value = type;
 };
 
-const hideSubtasks = () => {
+const showSubtasks = (groupId, id) => {
+  showHoverPanel('subtasks', groupId, id);
+};
+
+const showDescription = (groupId, id) => {
+  showHoverPanel('description', groupId, id);
+};
+
+const hideHoverPanel = () => {
   const key = hoveredKey.value;
+  const type = hoveredType.value;
   hoverTimeout = setTimeout(() => {
-    if (hoverActiveKey.value === key) {
+    if (hoverActiveKey.value === key && hoverActiveType.value === type) {
       hoverActiveKey.value = null;
+      hoverActiveType.value = null;
       hoveredKey.value = null;
+      hoveredType.value = null;
     }
   }, 200);
 };
@@ -695,7 +718,7 @@ const leaveCancelled = (el) => {
 </script>
 
 <template>
-  <div class="todo-list-container" @wheel="onWheel">
+  <div class="todo-list-container" @wheel="onWheel" :style="containerStyle">
     <!-- Header removed as per request -->
 
     <div class="groups-container" ref="groupsRef" :style="{ overflowY: scrollEnabled ? 'auto' : 'hidden' }"
@@ -749,7 +772,7 @@ const leaveCancelled = (el) => {
                   completed: element.isCompleted,
                   'is-hovering': hoveredKey === `${group.id}:${element.id}`,
                   'has-drag-handle': true
-                }" @contextmenu="onContextMenu($event, element)" @mouseleave="hideSubtasks">
+                }" @contextmenu="onContextMenu($event, element)" @mouseleave="hideHoverPanel">
                   <div class="todo-main-row">
                     <span class="drag-handle">⋮⋮</span>
                     <div class="checkbox-wrapper" @click.stop="toggleComplete(element, $event)">
@@ -768,7 +791,7 @@ const leaveCancelled = (el) => {
                       </div>
                       <div class="meta"
                         v-if="element.dueDate || (element.reminderEnabled !== false && element.remindAt) || element.repeatRule || element.description || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
-                        <span v-if="element.description" class="meta-tag has-desc" title="有备注">
+                        <span v-if="element.description" class="meta-tag has-desc" @mouseenter="showDescription(group.id, element.id)">
                           <i class="ri-sticky-note-line"></i>
                         </span>
 
@@ -776,17 +799,18 @@ const leaveCancelled = (el) => {
                           title="子任务" @mouseenter="showSubtasks(group.id, element.id)">
                           <i class="ri-list-check"></i> {{ getSubtaskProgress(element) }}
                         </span>
-                        <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
+                        <span v-if="element.dueDate" class="meta-tag" title="截止时间" :class="{ overdue: isOverdue(element) }">
                           <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
                         </span>
-                        <span v-if="element.reminderEnabled !== false && element.remindAt" class="meta-tag">
+                        <span v-if="element.reminderEnabled !== false && element.remindAt" class="meta-tag" title="提醒时间">
                           <i class="ri-alarm-line"></i> {{ formatRemindAt(element.remindAt) }}
                         </span>
-                        <span v-if="element.repeatRule" class="meta-tag">
+                        <span v-if="element.repeatRule" class="meta-tag" title="循环规则">
                           <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
                         </span>
                         <div v-if="element.attachments && element.attachments.length > 0"
                           class="attachment-icon-wrapper"
+                          title="附件"
                           @mouseenter="(e) => showAttachments(element.id, element.attachments, e)"
                           @mouseleave="hideAttachments">
                           <i class="ri-attachment-line"></i>
@@ -799,19 +823,30 @@ const leaveCancelled = (el) => {
                   <Transition @before-enter="beforeEnter" @enter="enter" @after-enter="afterEnter"
                     @enter-cancelled="enterCancelled" @leave="leave" @leave-cancelled="leaveCancelled">
                     <div
-                      v-if="hoveredKey === `${group.id}:${element.id}` && element.subtasks && element.subtasks.length > 0"
+                      v-if="hoveredKey === `${group.id}:${element.id}` && ((hoveredType === 'subtasks' && element.subtasks && element.subtasks.length > 0) || (hoveredType === 'description' && element.description))"
                       class="subtask-expansion-wrapper" :data-subtask-key="`${group.id}:${element.id}`" @click.stop>
                       <div class="subtask-inner-panel">
-                        <div v-for="(sub, idx) in element.subtasks" :key="idx" class="hover-subtask-item"
-                          @click="toggleSubtaskComplete(element, idx)">
-                          <div class="subtask-circle" :class="{ checked: sub.isCompleted }"
-                            :style="{ borderColor: sub.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }">
-                            <i v-if="sub.isCompleted" class="ri-check-line"></i>
+                        <template v-if="hoveredType === 'description'">
+                          <div class="hover-desc-panel">
+                            <div class="hover-desc-header">
+                              <i class="ri-sticky-note-line"></i>
+                              <span>备注</span>
+                            </div>
+                            <div class="hover-desc-item">{{ element.description }}</div>
                           </div>
-                          <span :class="{ done: sub.isCompleted }">
-                            <span class="subtask-index">{{ idx + 1 }}.</span> {{ sub.content }}
-                          </span>
-                        </div>
+                        </template>
+                        <template v-else>
+                          <div v-for="(sub, idx) in element.subtasks" :key="idx" class="hover-subtask-item"
+                            @click="toggleSubtaskComplete(element, idx)">
+                            <div class="subtask-circle" :class="{ checked: sub.isCompleted }"
+                              :style="{ borderColor: sub.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }">
+                              <i v-if="sub.isCompleted" class="ri-check-line"></i>
+                            </div>
+                            <span :class="{ done: sub.isCompleted }">
+                              <span class="subtask-index">{{ idx + 1 }}.</span> {{ sub.content }}
+                            </span>
+                          </div>
+                        </template>
                       </div>
                     </div>
                   </Transition>
@@ -825,7 +860,7 @@ const leaveCancelled = (el) => {
                 completed: element.isCompleted,
                 'is-hovering': hoveredKey === `${group.id}:${element.id}`,
                 'has-drag-handle': (!isCustomSort && group.id === 'active' && !['all', 'today', 'plan', 'urgent', 'completed'].includes(categoryId))
-              }" @contextmenu="onContextMenu($event, element)" @mouseleave="hideSubtasks">
+              }" @contextmenu="onContextMenu($event, element)" @mouseleave="hideHoverPanel">
                 <div class="todo-main-row">
                   <span class="drag-handle"
                     v-if="!isCustomSort && group.id === 'active' && !['all', 'today', 'plan', 'urgent', 'completed'].includes(categoryId)">⋮⋮</span>
@@ -845,26 +880,27 @@ const leaveCancelled = (el) => {
                     </div>
                     <div class="meta"
                       v-if="element.dueDate || (element.reminderEnabled !== false && element.remindAt) || element.repeatRule || element.description || (element.subtasks && element.subtasks.length > 0) || (element.attachments && element.attachments.length > 0)">
-                      <span v-if="element.description" class="meta-tag has-desc" title="有备注">
+                      <span v-if="element.description" class="meta-tag has-desc" @mouseenter="showDescription(group.id, element.id)">
                         <i class="ri-sticky-note-line"></i>
                       </span>
                       <span v-if="element.subtasks && element.subtasks.length > 0" class="meta-tag subtask-tag"
                         title="子任务" @mouseenter="showSubtasks(group.id, element.id)">
                         <i class="ri-list-check"></i> {{ getSubtaskProgress(element) }}
                       </span>
-                      <span v-if="element.dueDate" class="meta-tag" :class="{ overdue: isOverdue(element) }">
+                      <span v-if="element.dueDate" class="meta-tag" title="截止时间" :class="{ overdue: isOverdue(element) }">
                         <i class="ri-calendar-line"></i> {{ formatDueDate(element.dueDate) }}
                       </span>
-                      <span v-if="element.reminderEnabled !== false && element.remindAt" class="meta-tag">
+                      <span v-if="element.reminderEnabled !== false && element.remindAt" class="meta-tag" title="提醒时间">
                         <i class="ri-alarm-line"></i> {{ formatRemindAt(element.remindAt) }}
                       </span>
-                      <span v-if="element.repeatRule && !element.isCompleted" class="meta-tag">
+                      <span v-if="element.repeatRule && !element.isCompleted" class="meta-tag" title="循环规则">
                         <i class="ri-loop-right-line"></i> {{ formatRepeatRule(element) }}
                       </span>
-                      <span v-if="element.completedAt" class="meta-tag completed-time">
+                      <span v-if="element.completedAt" class="meta-tag completed-time" title="完成时间">
                         <i class="ri-check-double-line"></i> {{ dayjs(element.completedAt).format('MM-DD HH:mm') }}
                       </span>
                       <div v-if="element.attachments && element.attachments.length > 0" class="attachment-icon-wrapper"
+                        title="附件"
                         @mouseenter="(e) => showAttachments(element.id, element.attachments, e)"
                         @mouseleave="hideAttachments">
                         <i class="ri-attachment-line"></i>
@@ -878,19 +914,30 @@ const leaveCancelled = (el) => {
                 <Transition @before-enter="beforeEnter" @enter="enter" @after-enter="afterEnter"
                   @enter-cancelled="enterCancelled" @leave="leave" @leave-cancelled="leaveCancelled">
                   <div
-                    v-if="hoveredKey === `${group.id}:${element.id}` && element.subtasks && element.subtasks.length > 0"
+                    v-if="hoveredKey === `${group.id}:${element.id}` && ((hoveredType === 'subtasks' && element.subtasks && element.subtasks.length > 0) || (hoveredType === 'description' && element.description))"
                     class="subtask-expansion-wrapper" :data-subtask-key="`${group.id}:${element.id}`" @click.stop>
                     <div class="subtask-inner-panel">
-                      <div v-for="(sub, idx) in element.subtasks" :key="idx" class="hover-subtask-item"
-                        @click="toggleSubtaskComplete(element, idx)">
-                        <div class="subtask-circle" :class="{ checked: sub.isCompleted }"
-                          :style="{ borderColor: sub.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }">
-                          <i v-if="sub.isCompleted" class="ri-check-line"></i>
+                      <template v-if="hoveredType === 'description'">
+                        <div class="hover-desc-panel">
+                          <div class="hover-desc-header">
+                            <i class="ri-sticky-note-line"></i>
+                            <span>备注</span>
+                          </div>
+                          <div class="hover-desc-item">{{ element.description }}</div>
                         </div>
-                        <span :class="{ done: sub.isCompleted }">
-                          <span class="subtask-index">{{ idx + 1 }}.</span> {{ sub.content }}
-                        </span>
-                      </div>
+                      </template>
+                      <template v-else>
+                        <div v-for="(sub, idx) in element.subtasks" :key="idx" class="hover-subtask-item"
+                          @click="toggleSubtaskComplete(element, idx)">
+                          <div class="subtask-circle" :class="{ checked: sub.isCompleted }"
+                            :style="{ borderColor: sub.isCompleted ? 'transparent' : (element.priority === 'high' ? 'var(--danger-color)' : (element.priority === 'medium' ? 'var(--warning-color)' : (element.priority === 'low' ? 'var(--success-color)' : 'var(--border-color)'))) }">
+                            <i v-if="sub.isCompleted" class="ri-check-line"></i>
+                          </div>
+                          <span :class="{ done: sub.isCompleted }">
+                            <span class="subtask-index">{{ idx + 1 }}.</span> {{ sub.content }}
+                          </span>
+                        </div>
+                      </template>
                     </div>
                   </div>
                 </Transition>
@@ -1000,7 +1047,7 @@ const leaveCancelled = (el) => {
 }
 
 .group-section {
-  margin-bottom: 30px;
+  margin-bottom: var(--group-gap, 30px);
   position: relative;
   z-index: 1;
 }
@@ -1013,7 +1060,7 @@ const leaveCancelled = (el) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: var(--group-header-gap, 12px);
   padding: 6px 0;
   user-select: none;
   position: relative;
@@ -1485,6 +1532,37 @@ const leaveCancelled = (el) => {
     margin-right: 2px;
     opacity: 0.8;
     font-size: 12px;
+  }
+}
+
+.hover-desc-item {
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--secondary-text);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.hover-desc-panel {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+}
+
+.hover-desc-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-color);
+  opacity: 0.9;
+
+  i {
+    font-size: 14px;
+    opacity: 0.9;
   }
 }
 
