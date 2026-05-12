@@ -35,6 +35,17 @@ const days = computed(() => {
   return daysArr;
 });
 
+const weekdays = computed(() => {
+  const labels = ['日', '一', '二', '三', '四', '五', '六'];
+  // Determine week start from the actual first day in the calendar grid,
+  // so the header always aligns with the dates regardless of locale.
+  if (days.value.length > 0) {
+    const firstDayOfWeek = days.value[0].day(); // 0=Sunday, 1=Monday, ...
+    return [...labels.slice(firstDayOfWeek), ...labels.slice(0, firstDayOfWeek)];
+  }
+  return labels;
+});
+
 const getTodosForDate = (date) => {
   return props.todos.filter(todo => {
     if (!todo.dueDate) return false;
@@ -126,7 +137,7 @@ const handleWheel = (e) => {
 
     <div class="calendar-grid">
       <div class="weekdays">
-        <div v-for="d in ['日', '一', '二', '三', '四', '五', '六']" :key="d" class="weekday">{{ d }}</div>
+        <div v-for="d in weekdays" :key="d" class="weekday">{{ d }}</div>
       </div>
       <div class="days">
         <div 
