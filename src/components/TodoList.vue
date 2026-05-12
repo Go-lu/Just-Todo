@@ -352,6 +352,17 @@ const displayGroups = computed(() => {
       map.get(catId).items.push(t);
     });
 
+    // In sticky mode, always show all categories even when empty
+    // so the user can always add tasks via the group-add-btn
+    props.categories.forEach(c => {
+      if (!map.has(c.id)) {
+        map.set(c.id, { id: c.id, title: c.name, items: [] });
+      }
+    });
+    if (!map.has('default')) {
+      map.set('default', { id: 'default', title: '默认清单', items: [] });
+    }
+
     const sortedGroups = [];
     if (map.has('default')) sortedGroups.push(map.get('default'));
     props.categories.forEach(c => {
