@@ -557,6 +557,8 @@ const updateScrollState = () => {
 
 const onWheel = (e) => {
   if (previewVisible.value) return;
+  // Allow scrolling inside modal/overlay elements (e.g., TaskModal, preview overlay)
+  if (e.target.closest('.modal-overlay') || e.target.closest('.preview-overlay') || e.target.closest('.floating-picker-popover')) return;
   if (!scrollEnabled.value) {
     e.preventDefault();
     e.stopPropagation();

@@ -1261,7 +1261,7 @@ const onClose = () => {
 
 .modal-box.task-modal {
   background: var(--bg-color);
-  width: 500px;
+  width: min(500px, calc(100vw - 32px));
   max-height: 80vh; /* Max height to allow scrolling on small screens */
   overflow-y: auto; /* Enable vertical scroll */
   border-radius: 12px;
@@ -1271,6 +1271,7 @@ const onClose = () => {
   display: flex;
   flex-direction: column;
   position: relative;
+  box-sizing: border-box;
 }
 
 .dropdown-mask {
