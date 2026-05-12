@@ -552,12 +552,25 @@ const loadWebdavFiles = async () => {
     const list = parseWebdavList(xml);
 
     const base = (backupForm.webdav.baseUrl || '').toString().trim().replace(/\/+$/g, '');
+    // Extract origin (protocol + host + port) for absolute-path hrefs
+    let origin = '';
+    try { origin = new URL(base).origin; } catch (e) { origin = base; }
     const normalized = list
       .filter(i => i.name.endsWith('.json'))
-      .map(i => ({
-        ...i,
-        url: i.url.startsWith('http') ? i.url : (base + i.url)
-      }))
+      .map(i => {
+        let url;
+        if (i.url.startsWith('http')) {
+          // Full URL returned by server
+          url = i.url;
+        } else if (i.url.startsWith('/')) {
+          // Absolute path from server root - combine with origin only to avoid duplicated path
+          url = origin + i.url;
+        } else {
+          // Relative path
+          url = base + '/' + i.url;
+        }
+        return { ...i, url };
+      })
       .sort((a, b) => (b.lastModified || '').localeCompare(a.lastModified || '') || b.name.localeCompare(a.name));
 
     webdavFiles.value = normalized;
