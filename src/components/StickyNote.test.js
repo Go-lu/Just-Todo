@@ -61,4 +61,23 @@ describe('StickyNote', () => {
     expect(wrapper.find('.menu-popup').exists()).toBe(false);
     wrapper.unmount();
   });
+
+  it('edits a custom color and persists the change', async () => {
+    localStorage.setItem('justtodo_custom_colors', JSON.stringify(['#112233']));
+    const wrapper = mount(StickyNote);
+    await wrapper.find('button.menu-btn').trigger('click');
+
+    const customSwatch = wrapper.find('.custom-color-item .color-swatch');
+    await customSwatch.trigger('click');
+
+    const editInput = wrapper.find('.custom-color-item .edit-color-input');
+    await editInput.trigger('change', { target: { value: '#445566' } });
+    await wrapper.vm.$nextTick();
+
+    const saved = JSON.parse(localStorage.getItem('justtodo_custom_colors'));
+    expect(saved).toContain('#445566');
+    expect(saved).not.toContain('#112233');
+    expect(wrapper.find('.sticky-note').attributes('style')).toContain('#445566');
+    wrapper.unmount();
+  });
 });

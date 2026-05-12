@@ -64,8 +64,6 @@ onMounted(() => {
     } else {
       mediaQuery.addListener(handler);
     }
-    // Cleanup on unmount handled by Vue automatically? No, manual cleanup needed usually but onUnmounted not imported
-    // We can import onUnmounted or just leave it as it's a main component
   }
 });
 
@@ -330,6 +328,28 @@ const handleCustomColorChange = (e) => {
   customColor.value = value;
   noteColor.value = value;
   ensureCustomColor(value);
+};
+
+const handleEditCustomColorChange = (e, oldColor) => {
+  const newColor = e?.target?.value;
+  if (!oldColor || typeof oldColor !== 'string') return;
+  if (!newColor || typeof newColor !== 'string') return;
+  if (oldColor === newColor) return;
+
+  const idx = customColors.value.indexOf(oldColor);
+  if (idx !== -1) customColors.value.splice(idx, 1);
+
+  if (!presetColors.includes(newColor) && !customColors.value.includes(newColor)) {
+    const insertAt = idx !== -1 ? Math.min(idx, customColors.value.length) : customColors.value.length;
+    customColors.value.splice(insertAt, 0, newColor);
+  }
+
+  persistCustomColors();
+
+  if (noteColor.value === oldColor) {
+    noteColor.value = newColor;
+  }
+  customColor.value = newColor;
 };
 
 const removeCustomColor = (color) => {
@@ -697,6 +717,15 @@ onMounted(() => {
                     :style="{ backgroundColor: color }"
                     @click="!colorFollowSystem && setNoteColor(color)"
                   ></button>
+                  <label class="edit-custom-color" title="修改" @click.stop>
+                    <i class="ri-edit-2-line"></i>
+                    <input
+                      class="edit-color-input"
+                      type="color"
+                      :value="color"
+                      @change="!colorFollowSystem && handleEditCustomColorChange($event, color)"
+                    >
+                  </label>
                   <button
                     type="button"
                     class="delete-custom-color"
@@ -1077,6 +1106,36 @@ onMounted(() => {
     transform: scale(1);
   }
 
+  .edit-custom-color {
+    position: absolute;
+    bottom: -6px;
+    right: -6px;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.9);
+    cursor: pointer;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
+  .custom-color-item:hover .edit-custom-color {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .edit-custom-color i {
+    font-size: 11px;
+    line-height: 1;
+  }
+
   .delete-custom-color i {
     font-size: 12px;
     line-height: 1;
@@ -1087,6 +1146,13 @@ onMounted(() => {
     align-items: center;
     gap: 6px;
     flex: 0 0 auto;
+  }
+
+  .edit-custom-color .edit-color-input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
   }
 }
 
@@ -1122,6 +1188,11 @@ onMounted(() => {
 }
 
 .sticky-note.theme-dark .menu-popup .delete-custom-color {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.sticky-note.theme-dark .menu-popup .edit-custom-color {
   background: rgba(255, 255, 255, 0.25);
   color: #fff;
 }
