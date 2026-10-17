@@ -58,7 +58,7 @@ npm run build
 
 构建完成后，会在 `dist` 目录下生成插件文件。将 `dist` 目录下的内容（包含 `plugin.json`）打包成 `.upx` 文件即可发布。
 
-> 注意：`plugin.json` 和 `preload.js` 等 uTools 配置文件需要确保在构建输出中正确处理。本项目已配置 `vite-plugin-static-copy` 或手动管理静态资源。
+> 注意：`plugin.json` 和 `preload/services.js` 等 uTools 配置文件放置在 `public/` 目录下，Vite 构建时会自动复制到 `dist` 目录。
 
 ## 📝 目录结构
 
