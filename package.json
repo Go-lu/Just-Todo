@@ -1,4 +1,8 @@
 {
+  "name": "just-todo",
+  "version": "1.0.0",
+  "description": "Just Todo - 一个轻量级、现代化的 uTools 待办事项插件",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
